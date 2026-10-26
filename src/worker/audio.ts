@@ -55,7 +55,7 @@ export async function createAudioRecorder(
     attach();
     for (let i = 0; ctx.currentTime < 0.1 && i < 100; i++)
       await new Promise((r) => setTimeout(r, 25));
-    if (ctx.currentTime < 0.1) throw Error("Аудиочасы браузера не запустились");
+    if (ctx.currentTime < 0.1) throw Error("The browser audio clock did not start");
     w.__eaAudioTimer = setInterval(attach, 500);
     w.__eaAudioContext = ctx;
     w.__eaRecorder = new w.EngineeringCapture.MediaRecorderChunker({
@@ -65,7 +65,7 @@ export async function createAudioRecorder(
     });
     await w.__eaRecorder.start();
     if (!w.__eaRecorder.getMediaRecorder())
-      throw Error("Не удалось запустить MediaRecorder");
+      throw Error("Could not start MediaRecorder");
   });
   writer.startedAtMs = Date.now();
   return {

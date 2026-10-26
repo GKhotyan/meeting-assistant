@@ -2,14 +2,14 @@ const $ = (id) => document.getElementById(id);
 let activeId = null;
 let busy = false;
 const labels = {
-  queued: "Запуск",
-  joining: "Подключение",
-  waiting: "Ожидание допуска",
-  recording: "Идёт запись",
-  stopping: "Сохранение и выход",
-  completed: "Завершена",
-  failed: "Ошибка",
-  interrupted: "Прервана",
+  queued: "Starting",
+  joining: "Joining",
+  waiting: "Waiting for admission",
+  recording: "Recording",
+  stopping: "Saving and leaving",
+  completed: "Completed",
+  failed: "Failed",
+  interrupted: "Interrupted",
 };
 async function api(path, method = "GET", body) {
   const response = await fetch(path, {
@@ -18,7 +18,7 @@ async function api(path, method = "GET", body) {
     body: body ? JSON.stringify(body) : undefined,
   });
   const data = await response.json();
-  if (!response.ok) throw Error(data.error || "Ошибка запроса");
+  if (!response.ok) throw Error(data.error || "Request failed");
   return data;
 }
 function notice(text, error = false) {
@@ -36,7 +36,7 @@ function render(sessions) {
   if (!sessions.length) {
     const p = document.createElement("p");
     p.className = "muted";
-    p.textContent = "Пока нет записей. Вставьте ссылку и подключите бота.";
+    p.textContent = "No recordings yet. Paste a meeting link to get started.";
     $("sessions").append(p);
   }
   for (const s of sessions) {
@@ -49,7 +49,7 @@ function render(sessions) {
     state.className = "badge " + s.status;
     meta.className = "muted";
     meta.textContent =
-      new Date(s.createdAt).toLocaleString() + " · " + s.id.slice(0, 8);
+      new Date(s.createdAt).toLocaleString("en-US") + " · " + s.id.slice(0, 8);
     card.append(title, state, meta);
     if (s.error) {
       const error = document.createElement("p");
@@ -60,10 +60,10 @@ function render(sessions) {
     for (const file of s.files) {
       const link = document.createElement("a");
       link.textContent =
-        (file.kind === "audio" ? "↓ Аудио" : file.kind === "screenshot" ? "↓ Скриншот " + new Date(file.startedAtMs).toLocaleTimeString() : "↓ Видео экрана") +
+        (file.kind === "audio" ? "↓ Audio" : file.kind === "screenshot" ? "↓ Screenshot " + new Date(file.startedAtMs).toLocaleTimeString("en-US") : "↓ Screen video") +
         " · " +
         (file.bytes / 1024 / 1024).toFixed(1) +
-        " МБ";
+        " MB";
       link.href =
         "/api/sessions/" +
         encodeURIComponent(s.id) +
@@ -76,7 +76,7 @@ function render(sessions) {
       const p = document.createElement("p");
       p.className = "muted";
       p.textContent =
-        "Доступные фрагменты и журнал сохранены в папке этой встречи.";
+        "Available recording chunks and logs are saved in this session’s folder.";
       card.append(p);
     }
     $("sessions").append(card);
@@ -86,9 +86,9 @@ async function refresh() {
   try {
     const data = await api("/api/sessions");
     render(data.sessions);
-    $("connection").textContent = "Сервис доступен";
+    $("connection").textContent = "Connected";
   } catch (e) {
-    $("connection").textContent = "Нет связи с сервисом";
+    $("connection").textContent = "Disconnected";
   }
 }
 $("join").addEventListener("submit", async (event) => {
@@ -104,7 +104,7 @@ $("join").addEventListener("submit", async (event) => {
     });
     $("meetingUrl").value = "";
     notice(
-      "Бот запускается. При необходимости допустите его из комнаты ожидания.",
+      "The bot is starting. Admit it from the waiting room if needed.",
     );
   } catch (e) {
     notice(e.message, true);
@@ -116,7 +116,7 @@ $("join").addEventListener("submit", async (event) => {
 async function saveSettings() {
   try {
     await api("/api/settings", "PUT", { botName: $("botName").value, recordingMode: $("recordingMode").value });
-    notice("Настройки сохранены для следующих подключений.");
+    notice("Settings saved for future meetings.");
   } catch (e) {
     notice(e.message, true);
   }
@@ -129,7 +129,7 @@ $("stop").addEventListener("click", async () => {
   $("stop").disabled = true;
   try {
     await api("/api/sessions/" + activeId + "/stop", "POST", {});
-    notice("Сохраняю файлы и отключаю бота…");
+    notice("Saving files and disconnecting the bot…");
   } catch (e) {
     notice(e.message, true);
   } finally {

@@ -53,7 +53,7 @@ export function createApp(
             "WWW-Authenticate",
             'Basic realm="Meeting Assistant", charset="UTF-8"',
           );
-          json(401, { error: "Требуется вход" });
+          json(401, { error: "Authentication required" });
           return;
         }
       }
@@ -62,36 +62,36 @@ export function createApp(
           req.headers.origin &&
           new URL(req.headers.origin).host !== req.headers.host
         )
-          throw new AppError(403, "Запрос с другого сайта запрещён");
+          throw new AppError(403, "Cross-site requests are not allowed");
         if (!(req.headers["content-type"] || "").startsWith("application/json"))
-          throw new AppError(415, "Нужен application/json");
+          throw new AppError(415, "Content-Type must be application/json");
       }
       const body = async () => {
         let bytes = 0;
         const chunks: Buffer[] = [];
         for await (const chunk of req) {
           bytes += chunk.length;
-          if (bytes > 16384) throw new AppError(413, "Слишком большой запрос");
+          if (bytes > 16384) throw new AppError(413, "Request body is too large");
           chunks.push(chunk);
         }
         try {
           return JSON.parse(Buffer.concat(chunks).toString() || "{}");
         } catch {
-          throw new AppError(400, "Неверный JSON");
+          throw new AppError(400, "Invalid JSON");
         }
       };
       if (path === "/api/settings") {
         if (req.method === "GET") json(200, controller.settings());
         else if (req.method === "PUT")
           json(200, controller.setSettings(await body()));
-        else throw new AppError(405, "Метод не поддерживается");
+        else throw new AppError(405, "Method not allowed");
         return;
       }
       if (path === "/api/sessions") {
         if (req.method === "GET") json(200, { sessions: controller.list() });
         else if (req.method === "POST")
           json(201, await controller.startSession(await body()));
-        else throw new AppError(405, "Метод не поддерживается");
+        else throw new AppError(405, "Method not allowed");
         return;
       }
       const stop = path.match(/^\/api\/sessions\/([a-zA-Z0-9-]+)\/stop$/);
@@ -99,7 +99,7 @@ export function createApp(
         await body();
         const id = stop[1];
         if (!controller.getSession(id))
-          throw new AppError(404, "Встреча не найдена");
+          throw new AppError(404, "Session not found");
         void controller.stopSession(id).catch(() => {});
         json(202, { status: "stopping" });
         return;
@@ -107,7 +107,7 @@ export function createApp(
       const detail = path.match(/^\/api\/sessions\/([a-zA-Z0-9-]+)$/);
       if (detail && req.method === "GET") {
         const session = controller.getSession(detail[1]);
-        if (!session) throw new AppError(404, "Встреча не найдена");
+        if (!session) throw new AppError(404, "Session not found");
         json(200, session);
         return;
       }
@@ -121,7 +121,7 @@ export function createApp(
             (f) => f.id === fid && f.status === "ready",
           );
         if (!file || basename(file.name) !== file.name)
-          throw new AppError(404, "Файл не найден");
+          throw new AppError(404, "File not found");
         const dir = join(controller.root, "recordings", sid),
           target = join(dir, file.name);
         if (
@@ -129,7 +129,7 @@ export function createApp(
           !realpathSync(target).startsWith(realpathSync(dir) + sep) ||
           !statSync(target).isFile()
         )
-          throw new AppError(404, "Файл не найден");
+          throw new AppError(404, "File not found");
         res.writeHead(200, {
           "Content-Type": file.kind === "audio" ? "audio/webm" : file.kind === "screenshot" ? "image/jpeg" : "video/mp4",
           "Content-Length": statSync(target).size,
@@ -156,7 +156,7 @@ export function createApp(
         res.end(readFileSync(join(options.publicDir, file)));
         return;
       }
-      throw new AppError(404, "Не найдено");
+      throw new AppError(404, "Not found");
     } catch (e) {
       if (res.headersSent) {
         res.destroy();
@@ -170,7 +170,7 @@ export function createApp(
         JSON.stringify({
           error:
             status === 500
-              ? "Внутренняя ошибка. Проверьте журнал сервера."
+              ? "Internal error. Check the server logs."
               : (e as Error).message,
         }),
       );

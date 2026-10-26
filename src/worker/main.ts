@@ -75,7 +75,7 @@ async function stop(error?: string) {
 }
 process.on("SIGTERM", () => void stop());
 process.on("SIGINT", () => void stop());
-process.on("disconnect", () => void stop("Контроллер отключился"));
+process.on("disconnect", () => void stop("Controller disconnected"));
 process.on("message", async (m: any) => {
   if (m.type === "stop") {
     void stop();
@@ -97,7 +97,7 @@ process.on("message", async (m: any) => {
           status: state === "awaiting_admission" ? "waiting" : "joining",
           detail:
             state === "blocked" || state === "needs_human_help"
-              ? String(detail?.reason || "Zoom требует вмешательства")
+              ? String(detail?.reason || "Zoom requires manual assistance")
               : undefined,
         });
       },
@@ -109,7 +109,7 @@ process.on("message", async (m: any) => {
     detachBrowser = watchBrowser(
       page,
       context,
-      () => void stop("Браузер Zoom неожиданно закрылся"),
+      () => void stop("The Zoom browser closed unexpectedly"),
     );
     if (stopRequested) return;
     await joinZoomMeeting(page, input.meetingUrl, input.botName, config);

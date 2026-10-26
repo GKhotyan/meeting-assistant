@@ -17,7 +17,7 @@ export interface Worker extends EventEmitter {
 function recordingMode(value: unknown): RecordingMode {
   if (value === undefined) return "video";
   if (value === "video" || value === "screenshots") return value;
-  throw new AppError(400, "Выберите видео или скриншоты");
+  throw new AppError(400, "Choose video or screenshots");
 }
 export function validateInput(input: StartInput): StartInput {
   if (
@@ -25,12 +25,12 @@ export function validateInput(input: StartInput): StartInput {
     !input.botName.trim() ||
     input.botName.trim().length > 100
   )
-    throw new AppError(400, "Имя бота: от 1 до 100 символов");
+    throw new AppError(400, "Bot name must contain 1 to 100 characters");
   let url: URL;
   try {
     url = new URL(input.meetingUrl);
   } catch {
-    throw new AppError(400, "Нужна ссылка Zoom");
+    throw new AppError(400, "A Zoom meeting link is required");
   }
   if (
     url.protocol !== "https:" ||
@@ -44,7 +44,7 @@ export function validateInput(input: StartInput): StartInput {
   )
     throw new AppError(
       400,
-      "Поддерживаются обычные HTTPS-ссылки на встречи zoom.us",
+      "Use a standard HTTPS meeting link on zoom.us",
     );
   return { meetingUrl: url.href, botName: input.botName.trim(), recordingMode: recordingMode(input.recordingMode) };
 }
@@ -73,7 +73,7 @@ export class Controller {
       const s = JSON.parse(readFileSync(file, "utf8")) as Session;
       if (!terminal(s.status)) {
         s.status = "interrupted";
-        s.error = "Процесс завершился до окончания записи";
+        s.error = "The worker exited before recording finished";
         this.save(s);
       }
       this.sessions.set(s.id, s);
@@ -112,7 +112,7 @@ export class Controller {
   async startSession(raw: StartInput) {
     const input = validateInput({ ...raw, recordingMode: raw?.recordingMode ?? this.config.recordingMode });
     if (this.active)
-      throw new AppError(409, "Встреча уже запущена. Сначала остановите её.");
+      throw new AppError(409, "A meeting is already running. Stop it first.");
     const s: Session = {
       id: randomUUID(),
       botName: input.botName,
@@ -130,7 +130,7 @@ export class Controller {
       worker = this.spawnWorker(dir);
     } catch (e) {
       s.status = "failed";
-      s.error = "Не удалось запустить процесс бота";
+      s.error = "Could not start the bot worker";
       this.save(s);
       throw e;
     }
@@ -158,7 +158,7 @@ export class Controller {
     worker.on("exit", () => {
       if (!active.done) {
         s.status = "interrupted";
-        s.error = "Процесс остановился до подтверждения завершения";
+        s.error = "The worker exited before confirming completion";
         s.endedAt = new Date().toISOString();
         this.save(s);
       }
@@ -166,7 +166,7 @@ export class Controller {
     });
     worker.on("error", () => {
       s.status = "failed";
-      s.error = "Ошибка процесса бота";
+      s.error = "Bot worker error";
       active.done = true;
       this.save(s);
       worker.kill("SIGTERM");
@@ -176,7 +176,7 @@ export class Controller {
   }
   async stopSession(id: string) {
     const s = this.sessions.get(id);
-    if (!s) throw new AppError(404, "Встреча не найдена");
+    if (!s) throw new AppError(404, "Session not found");
     const a = this.active;
     if (!a || a.id !== id) return;
     if (a.stopping) return a.stopping;

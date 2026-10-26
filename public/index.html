@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="ru">
+<html lang="en">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
@@ -13,20 +13,20 @@
         <span class="eyebrow">ZOOM RECORDER</span>
         <h1>Meeting Assistant</h1>
         <p>
-          Аудио встречи и видео или скриншоты экрана — на вашем диске.
+          Meeting audio, video, and screenshots — saved on your own disk.
         </p>
       </header>
       <section>
         <form id="join">
           <label
-            >Имя бота<input
+            >Bot name<input
               id="botName"
               name="botName"
               maxlength="100"
               required
               value="Engineering Assistant" /></label
           ><label
-            >Ссылка на встречу Zoom<input
+            >Zoom meeting link<input
               id="meetingUrl"
               name="meetingUrl"
               type="url"
@@ -34,35 +34,35 @@
               autocomplete="off"
               required
           /></label>
-          <label>Сохранение экрана
+          <label>Screen capture
             <select id="recordingMode" name="recordingMode">
-              <option value="video">Полное видео</option>
-              <option value="screenshots">Скриншоты каждые 5 секунд</option>
+              <option value="video">Full video</option>
+              <option value="screenshots">Screenshots every 5 seconds</option>
             </select>
           </label>
-          <p class="muted">Звук записывается отдельно в любом режиме. Выбор сохраняется для следующих встреч.</p>
+          <p class="muted">Audio is recorded separately in both modes. Your choice is saved for future meetings.</p>
           <div class="actions">
-            <button id="start" type="submit">Подключиться и записывать</button
+            <button id="start" type="submit">Join and record</button
             ><button id="stop" type="button" class="secondary" disabled>
-              Остановить
+              Stop recording
             </button>
           </div>
         </form>
         <p id="notice" role="status" aria-live="polite"></p>
         <p class="muted">
-          Одна встреча одновременно. Запись продолжится, если вы закроете эту
-          страницу. Видео и скриншоты включают экран встречи Zoom.
+          One meeting at a time. Recording continues if you close this
+          page. Video and screenshots capture the Zoom meeting screen.
         </p>
       </section>
       <section>
         <div class="section-title">
-          <h2>Встречи и записи</h2>
-          <span id="connection">Подключение…</span>
+          <h2>Meetings and recordings</h2>
+          <span id="connection">Joining…</span>
         </div>
         <div id="sessions"></div>
       </section>
       <footer>
-        Файлы: data/recordings/&lt;встреча&gt;/ · Аудио WebM · Видео MP4 · Скриншоты JPEG
+        Files: data/recordings/&lt;session-id&gt;/ · WebM audio · MP4 video · JPEG screenshots
       </footer>
     </main>
   </body>

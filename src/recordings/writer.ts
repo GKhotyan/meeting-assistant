@@ -46,7 +46,7 @@ export class AudioWriter {
     const files = readdirSync(this.parts)
       .filter((n) => /^\d{6}\.webm$/.test(n))
       .sort();
-    if (!files.length) throw Error("Аудио не получено");
+    if (!files.length) throw Error("No audio received");
     for (let i = 0; i < files.length; i++)
       if (files[i] !== String(i).padStart(6, "0") + ".webm")
         throw Error("Missing audio sequence");
@@ -134,7 +134,7 @@ export async function recordScreen(
     p.on("exit", (code) =>
       code === 0
         ? resolve()
-        : reject(Error("Видеозапись завершилась с ошибкой: " + errorText)),
+        : reject(Error("Video recording failed: " + errorText)),
     );
   });
   done.catch((e) => {
@@ -147,7 +147,7 @@ export async function recordScreen(
   // Catch failures that occur immediately after exec (e.g. missing X display).
   await Promise.race([
     done.then(() => {
-      throw Error("Видеозапись завершилась раньше времени");
+      throw Error("Video recording ended unexpectedly");
     }),
     new Promise((r) => setTimeout(r, 250)),
   ]);
@@ -164,7 +164,7 @@ export async function recordScreen(
           clearTimeout(timer);
         }
         if (!existsSync(partial) || statSync(partial).size === 0)
-          throw Error("Пустая видеозапись");
+          throw Error("Video recording is empty");
         renameSync(partial, target);
         return {
           id: "screen",
