@@ -1,0 +1,28 @@
+{
+  "name": "meeting-assistant",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "build": "tsc && esbuild browser-entry.ts --bundle --format=iife --global-name=EngineeringCapture --outfile=dist/capture.js",
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test tests/*.test.ts",
+    "test:vendor": "tsx vendor/vexa/join/zoom/join.test.ts && tsx vendor/vexa/join/zoom/admission.test.ts",
+    "start": "node dist/src/server/main.js"
+  },
+  "dependencies": {
+    "playwright": "1.56.0",
+    "playwright-extra": "4.3.6",
+    "puppeteer-extra-plugin-stealth": "2.11.2"
+  },
+  "devDependencies": {
+    "@types/node": "22.19.0",
+    "typescript": "5.9.3",
+    "tsx": "4.20.6",
+    "esbuild": "0.25.0"
+  },
+  "description": "Self-hosted Zoom recorder with separate audio, video and timestamped screenshots.",
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">=22"
+  }
+}

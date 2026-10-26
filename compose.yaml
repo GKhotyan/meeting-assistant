@@ -1,0 +1,15 @@
+name: engineering-assistant
+services:
+  app:
+    build: .
+    image: engineering-assistant:local
+    restart: unless-stopped
+    shm_size: 1gb
+    stop_grace_period: 60s
+    ports:
+      - "${BIND_ADDRESS:-127.0.0.1}:${PORT:-8088}:8088"
+    environment:
+      ACCESS_MODE: "${ACCESS_MODE:-local}"
+      APP_PASSWORD: "${APP_PASSWORD:-}"
+    volumes:
+      - ./data:/data

@@ -1,0 +1,4 @@
+load-module module-native-protocol-unix socket=/tmp/pulse.sock auth-anonymous=1
+load-module module-null-sink sink_name=meeting sink_properties=device.description=MeetingAudio
+set-default-sink meeting
+set-default-source meeting.monitor
