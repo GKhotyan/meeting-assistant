@@ -3,6 +3,7 @@ ENV DEBIAN_FRONTEND=noninteractive PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 HOST=0.0.0
 RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg pulseaudio fluxbox x11-utils tini && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY package.json package-lock.json ./
+COPY LICENSE THIRD_PARTY_NOTICES.md ./
 RUN npm ci --no-audit --no-fund
 COPY tsconfig.json browser-entry.ts ./
 COPY src ./src

@@ -1,4 +1,12 @@
 /**
+ * Derived from Vexa (Vexa-ai/vexa), licensed under Apache-2.0.
+ * Upstream revision: f1a62fbbdfd2c98cb162582d82c31fe8102acc89
+ * Upstream file: core/meetings/modules/record-chunker/src/index.ts
+ * Modified for Meeting Assistant, 2026-10-26:
+ * Drain in-flight audio writes before finalization and fail on a configurable drain timeout.
+ * See LICENSE and THIRD_PARTY_NOTICES.md at the project root.
+ */
+/**
  * @vexa/record-chunker — the shared browser MediaRecorder driver.
  *
  * Runs in browser context. Wraps a MediaRecorder over a combined audio

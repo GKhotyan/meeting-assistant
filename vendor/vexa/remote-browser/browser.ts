@@ -1,4 +1,12 @@
 /**
+ * Derived from Vexa (Vexa-ai/vexa), licensed under Apache-2.0.
+ * Upstream revision: f1a62fbbdfd2c98cb162582d82c31fe8102acc89
+ * Upstream file: core/meetings/modules/remote-browser/src/browser.ts
+ * Modified for Meeting Assistant, 2026-10-26:
+ * Remove the session-store dependency and require a caller-owned browser profile directory.
+ * See LICENSE and THIRD_PARTY_NOTICES.md at the project root.
+ */
+/**
  * browser — the one true persistent-context launch.
  *
  * A *persistent* context (vs a fresh newContext) is what makes authentication work:

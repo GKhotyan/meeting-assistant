@@ -1,3 +1,11 @@
+/**
+ * Derived from Vexa (Vexa-ai/vexa), licensed under Apache-2.0.
+ * Upstream revision: f1a62fbbdfd2c98cb162582d82c31fe8102acc89
+ * Upstream file: core/meetings/modules/join/src/_host.ts
+ * Modified for Meeting Assistant, 2026-10-26:
+ * Route structured logging through Meeting Assistant credential redaction.
+ * See LICENSE and THIRD_PARTY_NOTICES.md at the project root.
+ */
 import {redact} from "../../../src/session/security";
 /**
  * _host.ts — the ENTIRE contract between the isolated joining layer and the

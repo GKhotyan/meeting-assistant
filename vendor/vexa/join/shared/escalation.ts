@@ -1,3 +1,11 @@
+/**
+ * Derived from Vexa (Vexa-ai/vexa), licensed under Apache-2.0.
+ * Upstream revision: f1a62fbbdfd2c98cb162582d82c31fe8102acc89
+ * Upstream file: core/meetings/modules/join/src/shared/escalation.ts
+ * Modified for Meeting Assistant, 2026-10-26:
+ * Disable the VNC stack and report that manual admission help is required.
+ * See LICENSE and THIRD_PARTY_NOTICES.md at the project root.
+ */
 import { spawn } from 'child_process';
 import { existsSync } from 'fs';
 import { log, callNeedsHumanHelpCallback } from '../_host';
