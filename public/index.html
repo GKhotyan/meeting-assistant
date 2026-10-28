@@ -1,23 +1,75 @@
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>Meeting Assistant</title>
-    <link rel="stylesheet" href="/style.css" />
-    <script defer src="/app.js"></script>
-  </head>
-  <body>
-    <main>
-      <header>
-        <span class="eyebrow">ZOOM RECORDER</span>
-        <h1>Meeting Assistant</h1>
-        <p>
-          Meeting audio, video, and screenshots — saved on your own disk.
-        </p>
-      </header>
-      <section>
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Meeting Assistant</title>
+<link rel="stylesheet" href="/style.css" />
+<script defer src="/app.js"></script>
+</head>
+<body>
+<a class="skip-link" href="#page-title">Skip to content</a>
+<aside class="sidebar">
+  <a class="brand" href="/" aria-label="Meeting Assistant home"><span class="brand-mark" aria-hidden="true">m<span>•</span></span><span>Meeting<br> Assistant</span></a>
+  <span class="nav-caption">WORKSPACE</span>
+  <nav class="tabs" role="tablist" aria-label="Workspace">
+    <button id="tab-now" role="tab" aria-selected="true" aria-controls="panel-now"><span aria-hidden="true">▤</span>Meetings</button>
+    <button id="tab-schedule" role="tab" aria-selected="false" aria-controls="panel-schedule" tabindex="-1"><span aria-hidden="true">▦</span>Schedule</button>
+    <button id="tab-settings" role="tab" aria-selected="false" aria-controls="panel-settings" tabindex="-1"><span aria-hidden="true">⚙</span>Settings</button>
+  </nav>
+  <div class="sidebar-bottom"><span class="local-dot"></span> Your files, your storage<p>Self-hosted. Always yours.</p></div>
+</aside>
+<main>
+  <header class="page-header"><div><div class="eyebrow">YOUR WORKSPACE</div><h1 id="page-title" tabindex="-1">Meetings</h1><p id="page-description">Every conversation, ready to revisit.</p></div><button id="record-meeting" type="button"><span aria-hidden="true">＋</span> Record a meeting</button></header>
+  <div id="active-session" class="active-session" hidden role="region" aria-label="Active meeting">
+    <span class="record-dot" aria-hidden="true"></span><div class="active-copy"><strong id="active-name"></strong><p><span id="active-status"></span> <span aria-hidden="true">·</span> <span id="active-timer"></span> elapsed</p></div><button id="stop" type="button" class="stop-button" disabled>Stop recording</button>
+  </div>
+  <p id="notice" role="status" aria-live="polite"></p>
+  <div id="panel-now" role="tabpanel" aria-labelledby="tab-now">
+    <div class="overview"><div><span class="overview-icon" aria-hidden="true">▤</span><div><span class="metric" id="meeting-count">0</span><span class="metric-label">Recorded meetings</span></div></div><div><span class="overview-icon" aria-hidden="true">◷</span><div><span class="metric" id="schedule-count">0</span><span class="metric-label">Active schedules</span></div></div><div class="storage-note"><span class="local-dot"></span><div><strong>Stored on your server</strong><span class="metric-label">Audio, video & screenshots</span></div></div></div>
+    <section class="library"><div class="section-title"><div><h2>All meetings <span id="result-count" class="count-pill">0</span></h2><p class="muted">Your conversations and recording files, in one place.</p></div><label class="search-label"><span class="sr-only">Search meetings</span><input id="meeting-search" type="search" placeholder="Search meetings…" /></label></div><div class="list-heading"><span>MEETING / FILES</span><span>STATUS</span></div><div id="sessions"></div></section>
+  </div>
+  <section id="panel-schedule" role="tabpanel" aria-labelledby="tab-schedule" hidden>
+    <div class="section-title"><div><h2>Recurring meetings</h2><p class="muted">Set it once. Be there every week.</p></div><button id="add-schedule" type="button">Add meeting</button></div>
+    <p class="muted">The bot joins automatically while the service is running. Overlapping meetings are skipped.</p>
+          <form id="schedule-form" class="schedule-editor" hidden>
+            <h3 id="schedule-editor-title">Add recurring meeting</h3>
+            <label>Meeting name<input id="schedule-name" maxlength="100" required placeholder="Daily standup" /></label>
+            <label>Bot name<input id="schedule-bot" required maxlength="100" value="Engineering Assistant" /></label>
+            <label>Zoom meeting link<input id="schedule-url" type="url" required autocomplete="off" placeholder="https://zoom.us/j/…" /></label>
+            <fieldset class="weekdays">
+              <legend>Repeat every week</legend>
+              <label><input type="checkbox" name="weekday" value="1" /><span>Mon</span></label>
+              <label><input type="checkbox" name="weekday" value="2" /><span>Tue</span></label>
+              <label><input type="checkbox" name="weekday" value="3" /><span>Wed</span></label>
+              <label><input type="checkbox" name="weekday" value="4" /><span>Thu</span></label>
+              <label><input type="checkbox" name="weekday" value="5" /><span>Fri</span></label>
+              <label><input type="checkbox" name="weekday" value="6" /><span>Sat</span></label>
+              <label><input type="checkbox" name="weekday" value="7" /><span>Sun</span></label>
+            </fieldset>
+            <div class="schedule-time">
+              <label>Time<input id="schedule-time" type="time" required value="10:00" step="60" /></label>
+              <label>Time zone<input id="schedule-zone" list="time-zones" required value="Europe/Moscow" maxlength="100" />
+                <datalist id="time-zones"><option value="Europe/Moscow"></option><option value="Europe/London"></option><option value="Europe/Berlin"></option><option value="America/New_York"></option><option value="Asia/Tokyo"></option><option value="UTC"></option></datalist>
+              </label>
+            </div>
+            <label>Recording mode<select id="schedule-mode"><option value="video">Full video</option><option value="screenshots">Screenshots every 15 seconds</option><option value="audio">Audio only</option></select></label>
+            <p class="muted">Uses the bot name from your current settings. Missed launches are skipped after one minute; they are never queued for later.</p>
+            <div class="actions"><button id="save-schedule" type="submit">Save meeting</button><button id="cancel-schedule" type="button" class="secondary">Cancel</button></div>
+          </form>
+          <div id="schedules"></div>
+
+  </section>
+  <section id="panel-settings" role="tabpanel" aria-labelledby="tab-settings" hidden>
+    <h2>Recording preferences</h2><p class="muted">Defaults for your next meeting. Changes do not affect a recording in progress.</p>
+    <form id="settings-form" class="settings-form"><label>Bot name<input id="settings-bot" required maxlength="100" /></label><label>Default recording mode<select id="settings-mode"><option value="video">Full video</option><option value="screenshots">Screenshots every 15 seconds</option><option value="audio">Audio only</option></select></label><p class="muted">Audio is recorded in every mode. Scheduled meetings use their own recording mode and bot name.</p><button type="submit">Save settings</button></form>
+  </section>
+  <footer><span id="connection">Connecting…</span><span>Meeting Assistant <span aria-hidden="true">·</span> Your conversations, on your terms.</span></footer>
+</main>
+<dialog id="record-dialog" aria-labelledby="record-title"><div class="drawer-heading"><div><span class="eyebrow">NEW MEETING</span><h2 id="record-title">Record a meeting</h2></div><button type="button" id="close-record" class="icon-button" aria-label="Close recording panel">×</button></div><p class="muted drawer-intro">Invite your assistant. Stay in the conversation.</p>
+        <p id="record-notice" role="status" aria-live="polite" hidden></p>
         <form id="join">
+          <label>Meeting name<input id="meetingName" name="meetingName" maxlength="100" required value="Meeting" /></label>
           <label
             >Bot name<input
               id="botName"
@@ -37,33 +89,21 @@
           <label>Screen capture
             <select id="recordingMode" name="recordingMode">
               <option value="video">Full video</option>
-              <option value="screenshots">Screenshots every 5 seconds</option>
+              <option value="screenshots">Screenshots every 15 seconds</option>
+              <option value="audio">Audio only</option>
             </select>
           </label>
-          <p class="muted">Audio is recorded separately in both modes. Your choice is saved for future meetings.</p>
+          <p class="muted">Audio is recorded in every mode. Audio only saves no video or screenshots. Your choice is saved for future meetings.</p>
           <div class="actions">
             <button id="start" type="submit">Join and record</button
-            ><button id="stop" type="button" class="secondary" disabled>
-              Stop recording
-            </button>
+            >
           </div>
         </form>
-        <p id="notice" role="status" aria-live="polite"></p>
         <p class="muted">
           One meeting at a time. Recording continues if you close this
           page. Video and screenshots capture the Zoom meeting screen.
         </p>
-      </section>
-      <section>
-        <div class="section-title">
-          <h2>Meetings and recordings</h2>
-          <span id="connection">Joining…</span>
-        </div>
-        <div id="sessions"></div>
-      </section>
-      <footer>
-        Files: data/recordings/&lt;session-id&gt;/ · WebM audio · MP4 video · JPEG screenshots
-      </footer>
-    </main>
-  </body>
+
+</dialog>
+</body>
 </html>

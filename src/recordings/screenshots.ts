@@ -15,7 +15,19 @@ export async function recordScreenshots(
     const startedAtMs = Date.now();
     const id = `screenshot-${String(files.length).padStart(6, "0")}`;
     const name = `${id}-${startedAtMs}.jpg`;
-    await capture(join(dir, name));
+    try {
+      await capture(join(dir, name));
+    } catch (error) {
+      // Font loading can stall while Zoom itself and audio remain healthy.
+      // Skip only this capture; the normal interval will retry without overlap.
+      if (error instanceof Error && error.name === "TimeoutError" &&
+          error.message.includes("page.screenshot:") &&
+          error.message.includes("waiting for fonts to load")) {
+        console.warn("Screenshot skipped: font loading timed out; retrying at the next interval");
+        return;
+      }
+      throw error;
+    }
     const endedAtMs = Date.now();
     const audioOffsetMs = options.audioStartedAtMs === undefined ? undefined : startedAtMs - options.audioStartedAtMs;
     writeFileSync(join(dir, name + ".json"), JSON.stringify({
@@ -36,7 +48,7 @@ export async function recordScreenshots(
         stopped = true;
         options.onFault?.(error);
       });
-    }, options.intervalMs ?? 5000);
+    }, options.intervalMs ?? 15000);
   }
   await take();
   schedule();

@@ -1,5 +1,6 @@
 import { maximizeZoomWindow } from "./window";
 import { watchBrowser } from "./lifecycle";
+import { readZoomParticipantCount, watchEmptyMeeting } from "./empty-meeting";
 import { launchZoomBrowser } from "./browser";
 
 import type { BrowserContext, Page } from "playwright";
@@ -28,6 +29,7 @@ let stopping: Promise<void> | undefined,
   removeMonitor: (() => void) | undefined,
   popupTimer: ReturnType<typeof setInterval> | undefined;
 let detachBrowser: (() => void) | undefined;
+let emptyMeetingMonitor: ReturnType<typeof watchEmptyMeeting> | undefined;
 let closeBrowser: (() => Promise<void>) | undefined;
 let config: any;
 let fault: string | undefined;
@@ -43,6 +45,7 @@ async function stop(error?: string) {
     send({ type: "status", status: "stopping" });
     detachBrowser?.();
     removeMonitor?.();
+    emptyMeetingMonitor?.stop();
     clearInterval(popupTimer);
     const watchdog = setTimeout(() => process.exit(1), 45000);
     watchdog.unref();
@@ -145,7 +148,7 @@ process.on("message", async (m: any) => {
       screenshots = await recordScreenshots(m.sessionDir,
         (path) => captureMeetingScreenshot(page!, path),
         { audioStartedAtMs: audio.startedAtMs, onFault: (e) => void stop(e.message) });
-    } else {
+    } else if (input.recordingMode !== "audio") {
       screen = await recordScreen(m.sessionDir, {
         onFault: (e) => void stop(e.message),
       });
@@ -156,6 +159,14 @@ process.on("message", async (m: any) => {
       return;
     }
     removeMonitor = startZoomRemovalMonitor(page, () => stop());
+    emptyMeetingMonitor = watchEmptyMeeting(
+      () => readZoomParticipantCount(page!),
+      () => {
+        console.log("Leaving Zoom after two minutes without other participants");
+        void stop();
+      },
+    );
+    void emptyMeetingMonitor.check();
     send({ type: "status", status: "recording" });
   } catch (e) {
     await stop(String(e));

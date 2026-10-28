@@ -10,6 +10,7 @@ test("each screenshot queries current share bounds and falls back when absent", 
   const clips = [{ x: 20, y: 0, width: 1800, height: 1000 }, { x: 100, y: 30, width: 1600, height: 900 }, undefined];
   const calls: any[] = [];
   const page = {
+    locator: () => ({ filter: () => ({ locator: () => ({ first: () => ({ isVisible: async () => false }) }) }) }),
     evaluate: async () => { const rect = clips.shift(); return rect ? { rect, viewport: { width: 1920, height: 1080 } } : null; },
     screenshot: async (options: any) => { calls.push(options); return Buffer.alloc(0); },
   };

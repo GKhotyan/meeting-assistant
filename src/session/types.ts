@@ -1,4 +1,4 @@
-export type RecordingMode = "video" | "screenshots";
+export type RecordingMode = "video" | "screenshots" | "audio";
 export type Status =
   | "queued"
   | "joining"
@@ -20,6 +20,7 @@ export interface RecordingFile {
 }
 export interface Session {
   id: string;
+  meetingName: string;
   botName: string;
   recordingMode?: RecordingMode;
   createdAt: string;
@@ -30,6 +31,7 @@ export interface Session {
 }
 export interface StartInput {
   meetingUrl: string;
+  meetingName?: string;
   botName: string;
   recordingMode?: RecordingMode;
 }

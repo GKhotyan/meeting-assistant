@@ -10,11 +10,15 @@ import { join, basename, sep } from "node:path";
 import { createHash, timingSafeEqual } from "node:crypto";
 import { Controller } from "../session/controller";
 import { AppError } from "../session/types";
+import type { Scheduler } from "../session/schedules";
 const hash = (s: string) => createHash("sha256").update(s).digest();
 export function createApp(
   controller: Controller,
-  options: { password?: string; publicDir: string },
+  options: { password?: string; publicDir: string; scheduler?: Scheduler; publicOrigin?: string },
 ) {
+  const publicUrl = options.publicOrigin ? new URL(options.publicOrigin) : undefined;
+  if (publicUrl && (!["http:", "https:"].includes(publicUrl.protocol) || publicUrl.username || publicUrl.password || publicUrl.pathname !== "/" || publicUrl.search || publicUrl.hash))
+    throw new Error("PUBLIC_ORIGIN must be an HTTP(S) origin, without a path, credentials, query or fragment");
   return createServer(async (req, res) => {
     try {
       res.setHeader("X-Content-Type-Options", "nosniff");
@@ -57,12 +61,17 @@ export function createApp(
           return;
         }
       }
-      if (["POST", "PUT"].includes(req.method || "")) {
-        if (
-          req.headers.origin &&
-          new URL(req.headers.origin).host !== req.headers.host
-        )
-          throw new AppError(403, "Cross-site requests are not allowed");
+      if (["POST", "PUT", "DELETE"].includes(req.method || "")) {
+        if (req.headers.origin) {
+          let allowed = false;
+          try {
+            const origin = new URL(req.headers.origin);
+            allowed = publicUrl
+              ? origin.origin === publicUrl.origin
+              : origin.host === req.headers.host;
+          } catch {}
+          if (!allowed) throw new AppError(403, "Cross-site requests are not allowed");
+        }
         if (!(req.headers["content-type"] || "").startsWith("application/json"))
           throw new AppError(415, "Content-Type must be application/json");
       }
@@ -80,6 +89,21 @@ export function createApp(
           throw new AppError(400, "Invalid JSON");
         }
       };
+      if (path === "/api/schedules" && options.scheduler) {
+        if (req.method === "GET") json(200, { schedules: options.scheduler.list() });
+        else if (req.method === "POST") json(201, options.scheduler.create(await body()));
+        else throw new AppError(405, "Method not allowed");
+        return;
+      }
+      const schedule = path.match(/^\/api\/schedules\/([a-zA-Z0-9-]+)$/);
+      if (schedule && options.scheduler) {
+        if (req.method === "PUT") json(200, options.scheduler.update(schedule[1], await body()));
+        else if (req.method === "DELETE") {
+          options.scheduler.delete(schedule[1]);
+          json(200, { status: "deleted" });
+        } else throw new AppError(405, "Method not allowed");
+        return;
+      }
       if (path === "/api/settings") {
         if (req.method === "GET") json(200, controller.settings());
         else if (req.method === "PUT")
@@ -105,6 +129,11 @@ export function createApp(
         return;
       }
       const detail = path.match(/^\/api\/sessions\/([a-zA-Z0-9-]+)$/);
+      if (detail && req.method === "DELETE") {
+        controller.deleteSession(detail[1]);
+        json(200, { status: "deleted" });
+        return;
+      }
       if (detail && req.method === "GET") {
         const session = controller.getSession(detail[1]);
         if (!session) throw new AppError(404, "Session not found");
@@ -122,7 +151,7 @@ export function createApp(
           );
         if (!file || basename(file.name) !== file.name)
           throw new AppError(404, "File not found");
-        const dir = join(controller.root, "recordings", sid),
+        const dir = controller.getSessionDirectory(sid),
           target = join(dir, file.name);
         if (
           !existsSync(target) ||

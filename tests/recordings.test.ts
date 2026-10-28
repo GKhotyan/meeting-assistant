@@ -33,6 +33,7 @@ test("audio finalization preserves ordered chunks including the final short tail
   const out = await w.finalize();
   assert.equal(out.name, "audio.webm");
   assert.equal(out.status, "ready");
+  assert.equal(existsSync(join(root, "audio-stream.partial.webm")), false);
   const probe = JSON.parse(
     execFileSync(
       "ffprobe",
@@ -68,6 +69,7 @@ test("audio rejects empty or invalid recording without publishing ready file", a
   w.append(0, Buffer.from("invalid"));
   await assert.rejects(() => w.finalize());
   assert.equal(existsSync(join(root, "audio.webm")), false);
+  assert.equal(readFileSync(join(root, "audio-stream.partial.webm"), "utf8"), "invalid");
 });
 test("audio disk write failure propagates instead of losing a chunk silently", () => {
   const root = dir();

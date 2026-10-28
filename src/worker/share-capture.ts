@@ -1,4 +1,10 @@
 import type { Page } from "playwright";
+import { dismissZoomMicrophoneWarning } from "../../vendor/vexa/join/zoom/leave";
+
+// Playwright 1.56 checks this in screenshotter.js. Capture the currently visible
+// meeting without waiting for web fonts; recheck this internal flag on upgrades.
+process.env.PW_TEST_SCREENSHOT_NO_FONTS_READY = "1";
+
 type Rect = { x: number; y: number; width: number; height: number };
 
 export function clipToViewport(rect: Rect, viewport: { width: number; height: number }): Rect | undefined {
@@ -11,6 +17,7 @@ export function clipToViewport(rect: Rect, viewport: { width: number; height: nu
 }
 
 export async function captureMeetingScreenshot(page: Page, path: string) {
+  await dismissZoomMicrophoneWarning(page);
   // Query before every capture: Zoom moves/resizes this element as the layout changes.
   const bounds = await page.evaluate(() => {
     const elements = document.querySelectorAll("#sharee-container .sharee-container__viewport");

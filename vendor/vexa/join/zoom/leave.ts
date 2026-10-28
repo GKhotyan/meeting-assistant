@@ -3,11 +3,28 @@ import { log, logJSON, callLeaveCallback, stopZoomRecording } from "../_host";
 import { BotConfig } from "../_host";
 import { zoomLeaveConfirmSelector } from "./selectors";
 
+/** Close only the missing-microphone advisory, without joining/unmuting audio. */
+export async function dismissZoomMicrophoneWarning(page: Page): Promise<void> {
+  const warning = page.locator(
+    ':is([class*="notification"], [class*="toast"], [class*="alert"], [class*="tip"], .zm-modal, [role="alert"], [role="dialog"])',
+  ).filter({ hasText: /Cannot detect your microphone/i });
+  const close = warning.locator(
+    '[aria-label*="close" i], button[class*="close" i], [role="button"][class*="close" i]',
+  ).first();
+  try {
+    if (await close.isVisible()) {
+      await close.click({ timeout: 1000 });
+      log('[Zoom Web] Dismissed "missing microphone" advisory');
+    }
+  } catch { /* Advisory may disappear while being dismissed; retry on next capture/poll. */ }
+}
+
 /**
  * Dismiss known Zoom Web popups/modals that overlay meeting content.
  * Safe to call repeatedly — each check is short-circuited if the popup isn't visible.
  */
 export async function dismissZoomPopups(page: Page): Promise<void> {
+  await dismissZoomMicrophoneWarning(page);
   // All checks use timeout:0 — instant visibility check, no waiting.
   // This function may be polled so there's no need to wait for elements to appear.
   const dismissTargets = [

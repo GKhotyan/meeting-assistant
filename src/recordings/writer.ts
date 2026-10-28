@@ -5,6 +5,7 @@ import {
   readFileSync,
   statSync,
   renameSync,
+  unlinkSync,
   existsSync,
   openSync,
   readSync,
@@ -75,6 +76,7 @@ export class AudioWriter {
       out,
     ]);
     renameSync(out, join(this.dir, "audio.webm"));
+    unlinkSync(raw);
     return {
       id: "audio",
       name: "audio.webm",

@@ -5,6 +5,7 @@ import {
   writeFileSync,
   renameSync,
   readdirSync,
+  rmSync,
 } from "node:fs";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
@@ -16,8 +17,8 @@ export interface Worker extends EventEmitter {
 }
 function recordingMode(value: unknown): RecordingMode {
   if (value === undefined) return "video";
-  if (value === "video" || value === "screenshots") return value;
-  throw new AppError(400, "Choose video or screenshots");
+  if (value === "video" || value === "screenshots" || value === "audio") return value;
+  throw new AppError(400, "Choose video, screenshots, or audio only");
 }
 export function validateInput(input: StartInput): StartInput {
   if (
@@ -26,6 +27,9 @@ export function validateInput(input: StartInput): StartInput {
     input.botName.trim().length > 100
   )
     throw new AppError(400, "Bot name must contain 1 to 100 characters");
+  const meetingName = input.meetingName === undefined ? "Meeting" : input.meetingName;
+  if (typeof meetingName !== "string" || !meetingName.trim() || meetingName.trim().length > 100)
+    throw new AppError(400, "Meeting name must contain 1 to 100 characters");
   let url: URL;
   try {
     url = new URL(input.meetingUrl);
@@ -46,10 +50,20 @@ export function validateInput(input: StartInput): StartInput {
       400,
       "Use a standard HTTPS meeting link on zoom.us",
     );
-  return { meetingUrl: url.href, botName: input.botName.trim(), recordingMode: recordingMode(input.recordingMode) };
+  return { meetingUrl: url.href, botName: input.botName.trim(), meetingName: meetingName.trim(), recordingMode: recordingMode(input.recordingMode) };
+}
+function folderPrefix(name: string) {
+  const safe = name.normalize("NFKC").replace(/[^\p{L}\p{M}\p{N}_-]+/gu, "_").replace(/^_+|_+$/g, "") || "Meeting";
+  let prefix = "";
+  for (const character of safe) {
+    if (Buffer.byteLength(prefix + character) > 180) break;
+    prefix += character;
+  }
+  return prefix;
 }
 export class Controller {
   private sessions = new Map<string, Session>();
+  private recordingDirectories = new Map<string, string>();
   private active?: {
     id: string;
     worker: Worker;
@@ -71,6 +85,8 @@ export class Controller {
       const file = join(root, "recordings", dir, "session.json");
       if (!existsSync(file)) continue;
       const s = JSON.parse(readFileSync(file, "utf8")) as Session;
+      this.recordingDirectories.set(s.id, join(root, "recordings", dir));
+      s.meetingName ||= "Meeting";
       if (!terminal(s.status)) {
         s.status = "interrupted";
         s.error = "The worker exited before recording finished";
@@ -86,7 +102,11 @@ export class Controller {
     renameSync(path + ".tmp", path);
   }
   private save(s: Session) {
-    this.atomic(join(this.root, "recordings", s.id, "session.json"), s);
+    this.atomic(join(this.getSessionDirectory(s.id), "session.json"), s);
+  }
+  getSessionDirectory(id: string) {
+    if (!/^[a-zA-Z0-9-]+$/.test(id)) throw new AppError(404, "Session not found");
+    return this.recordingDirectories.get(id) ?? join(this.root, "recordings", id);
   }
   settings() {
     return { ...this.config };
@@ -109,20 +129,32 @@ export class Controller {
     const s = this.sessions.get(id);
     return s ? structuredClone(s) : undefined;
   }
+  deleteSession(id: string) {
+    const session = this.sessions.get(id);
+    if (!session || !/^[a-zA-Z0-9-]+$/.test(id))
+      throw new AppError(404, "Session not found");
+    if (this.active?.id === id || !terminal(session.status))
+      throw new AppError(409, "Stop the meeting and wait for recording to finish before deleting it.");
+    rmSync(this.getSessionDirectory(id), { recursive: true, force: true });
+    this.sessions.delete(id);
+    this.recordingDirectories.delete(id);
+  }
   async startSession(raw: StartInput) {
     const input = validateInput({ ...raw, recordingMode: raw?.recordingMode ?? this.config.recordingMode });
     if (this.active)
       throw new AppError(409, "A meeting is already running. Stop it first.");
     const s: Session = {
       id: randomUUID(),
+      meetingName: input.meetingName!,
       botName: input.botName,
       recordingMode: input.recordingMode,
       createdAt: new Date().toISOString(),
       status: "queued",
       files: [],
     };
-    const dir = join(this.root, "recordings", s.id);
+    const dir = join(this.root, "recordings", folderPrefix(s.meetingName) + "_" + s.id);
     mkdirSync(dir, { recursive: true });
+    this.recordingDirectories.set(s.id, dir);
     this.sessions.set(s.id, s);
     this.save(s);
     let worker: Worker;
