@@ -878,3 +878,47 @@ footer {
     scroll-behavior:auto!important;
   }
 }
+
+.attempts {
+  margin: 12px 0;
+  min-width: 0;
+}
+.attempts > summary {
+  width: fit-content;
+  padding: 5px 9px;
+  border: 1px solid var(--border, #dfe4e1);
+  border-radius: 7px;
+  color: var(--muted, #63726a);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.attempts.has-failures > summary {
+  color: #a72e36;
+  background: #fff1f2;
+  border-color: #edc0c5;
+}
+.attempts > summary:focus-visible {
+  outline: 2px solid var(--accent, #257454);
+  outline-offset: 3px;
+}
+.attempt-history {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+}
+.attempt-history li {
+  padding: 8px 10px;
+  border-left: 2px solid var(--border, #dfe4e1);
+  margin: 8px 0;
+  overflow-wrap: anywhere;
+}
+.attempt-history p { margin: 0; font-size: 12px; }
+.attempt-error {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: 12px/1.6 ui-monospace, monospace;
+  margin: 6px 0 0;
+}
+.retry-countdown, .attempt-result { font-size: 12px; }
+.badge.retrying { color: #946211; background: #fff5da; }

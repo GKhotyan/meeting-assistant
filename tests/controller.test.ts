@@ -185,3 +185,72 @@ test("legacy UUID folders stay readable, receive the Meeting fallback and can st
   restored.deleteSession(id);
   assert.equal(existsSync(dir), false);
 });
+
+test("attempt history persists redacted errors and retry delay holds the single active slot", async () => {
+  const { c, root, workers } = setup();
+  const s = await c.startSession(input);
+  workers[0].emit("message", { type: "attempts", attempts: [
+    { number: 1, startedAt: "2026-10-29T06:40:00.000Z", endedAt: "2026-10-29T06:40:10.000Z", outcome: "failed", error: "net::ERR_RESET https://zoom.us/?pwd=secret Bearer private" },
+  ], nextRetryAt: "2026-10-29T06:40:20.000Z" });
+  const current = c.getSession(s.id)!;
+  assert.equal(current.status, "retrying");
+  assert.equal(current.nextRetryAt, "2026-10-29T06:40:20.000Z");
+  assert.equal(current.attempts?.length, 1);
+  assert.match(current.attempts![0].error!, /pwd=\[redacted\]/);
+  const disk = readFileSync(join(c.getSessionDirectory(s.id), "session.json"), "utf8");
+  assert.equal(disk.includes("secret"), false);
+  assert.equal(disk.includes("private"), false);
+  await assert.rejects(c.startSession(input), { status: 409 });
+  const restarted = new Controller(root, () => { throw Error("no auto rejoin"); });
+  assert.equal(restarted.getSession(s.id)?.status, "interrupted");
+  assert.equal(restarted.getSession(s.id)?.attempts?.[0].outcome, "failed");
+  assert.equal(restarted.getSession(s.id)?.nextRetryAt, undefined);
+  await c.stopSession(s.id);
+});
+test("success clears current errors and retry time but keeps earlier failures", async () => {
+  const { c, workers } = setup(); const s = await c.startSession(input);
+  workers[0].emit("message", { type: "status", status: "joining", detail: "zoom_requires_rtms" });
+  workers[0].emit("message", { type: "attempts", attempts: [
+    { number: 1, startedAt: s.createdAt, endedAt: s.createdAt, outcome: "failed", error: "zoom_requires_rtms" },
+    { number: 2, startedAt: s.createdAt, endedAt: s.createdAt, outcome: "connected" },
+  ] });
+  assert.equal(c.getSession(s.id)?.error, undefined);
+  assert.equal(c.getSession(s.id)?.nextRetryAt, undefined);
+  workers[0].emit("message", { type: "status", status: "recording" });
+  assert.equal(c.getSession(s.id)?.status, "recording");
+  assert.equal(c.getSession(s.id)?.attempts?.[0].error, "zoom_requires_rtms");
+  workers[0].emit("message", { type: "done", files: [] }); workers[0].emit("exit", 0);
+  assert.equal(c.getSession(s.id)?.status, "completed");
+  assert.equal(c.getSession(s.id)?.attempts?.length, 2);
+});
+test("stop during retry delay cannot be overwritten by late connection events", async () => {
+  const { c, workers } = setup(); const s = await c.startSession(input);
+  const attempts = [{ number: 1, startedAt: s.createdAt, endedAt: s.createdAt, outcome: "failed", error: "net::ERR_RESET" }];
+  workers[0].emit("message", { type: "attempts", attempts, nextRetryAt: "2026-10-29T06:40:20.000Z" });
+  const stopping = c.stopSession(s.id);
+  workers[0].emit("message", { type: "attempts", attempts, nextRetryAt: "2026-10-29T06:40:20.000Z" });
+  assert.equal(c.getSession(s.id)?.status, "stopping");
+  assert.equal(c.getSession(s.id)?.nextRetryAt, undefined);
+  workers[0].emit("message", { type: "done", files: [] });
+  await stopping;
+  assert.equal(c.getSession(s.id)?.status, "completed");
+  assert.equal(c.getSession(s.id)?.nextRetryAt, undefined);
+});
+test("invalid or excessive attempt snapshots cannot corrupt stored history", async () => {
+  const { c, workers } = setup(); const s = await c.startSession(input);
+  for (const attempts of [null, [{}], [{ number: 1, startedAt: "invalid", outcome: "connected" }], Array(5).fill({ number: 1, startedAt: s.createdAt, outcome: "failed" })])
+    workers[0].emit("message", { type: "attempts", attempts });
+  assert.deepEqual(c.getSession(s.id)?.attempts, []);
+  await c.stopSession(s.id);
+});
+for (const event of ["exit", "error"]) test(`worker ${event} finalizes an unfinished connection attempt`, async () => {
+  const { c, workers, root } = setup(); const s = await c.startSession(input);
+  workers[0].emit("message", { type: "attempts", attempts: [{ number: 1, startedAt: s.createdAt, outcome: "connecting" }] });
+  workers[0].emit(event, event === "error" ? Error("worker failed") : 1);
+  const current = c.getSession(s.id)!;
+  assert.equal(current.attempts?.[0].outcome, "failed");
+  assert.ok(current.attempts?.[0].endedAt);
+  assert.match(current.attempts?.[0].error || "", /worker/i);
+  const restored = new Controller(root, () => { throw Error("must not rejoin"); });
+  assert.equal(restored.getSession(s.id)?.attempts?.[0].outcome, "failed");
+});

@@ -3,6 +3,7 @@ export type Status =
   | "queued"
   | "joining"
   | "waiting"
+  | "retrying"
   | "recording"
   | "stopping"
   | "completed"
@@ -18,6 +19,13 @@ export interface RecordingFile {
   audioOffsetMs?: number;
   bytes: number;
 }
+export interface ConnectionAttempt {
+  number: number;
+  startedAt: string;
+  endedAt?: string;
+  outcome: "connecting" | "connected" | "failed" | "cancelled";
+  error?: string;
+}
 export interface Session {
   id: string;
   meetingName: string;
@@ -28,6 +36,8 @@ export interface Session {
   files: RecordingFile[];
   error?: string;
   endedAt?: string;
+  attempts?: ConnectionAttempt[];
+  nextRetryAt?: string;
 }
 export interface StartInput {
   meetingUrl: string;

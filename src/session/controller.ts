@@ -10,7 +10,8 @@ import {
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { EventEmitter } from "node:events";
-import { Session, Status, StartInput, AppError, terminal, RecordingMode } from "./types";
+import { Session, Status, StartInput, AppError, terminal, RecordingMode, ConnectionAttempt } from "./types";
+import { redact } from "./security";
 export interface Worker extends EventEmitter {
   send(message: unknown): unknown;
   kill(signal?: NodeJS.Signals): unknown;
@@ -61,6 +62,29 @@ function folderPrefix(name: string) {
   }
   return prefix;
 }
+function attemptSnapshot(value: unknown): ConnectionAttempt[] | undefined {
+  if (!Array.isArray(value) || value.length < 1 || value.length > 4) return;
+  const date = (v: unknown): v is string => typeof v === "string" && Number.isFinite(Date.parse(v));
+  const result: ConnectionAttempt[] = [];
+  for (const [index, attempt] of value.entries()) {
+    if (!attempt || attempt.number !== index + 1 || !date(attempt.startedAt) ||
+        !["connecting", "connected", "failed", "cancelled"].includes(attempt.outcome) ||
+        (attempt.endedAt !== undefined && !date(attempt.endedAt)) ||
+        (attempt.error !== undefined && typeof attempt.error !== "string")) return;
+    result.push({ number: attempt.number, startedAt: attempt.startedAt,
+      endedAt: attempt.endedAt, outcome: attempt.outcome,
+      error: attempt.error === undefined ? undefined : redact(attempt.error) });
+  }
+  return result;
+}
+function finishConnectingAttempts(s: Session, outcome: "failed" | "cancelled", error?: string) {
+  for (const attempt of s.attempts ?? []) {
+    if (attempt.outcome !== "connecting") continue;
+    attempt.outcome = outcome;
+    attempt.endedAt = new Date().toISOString();
+    if (error) attempt.error = redact(error);
+  }
+}
 export class Controller {
   private sessions = new Map<string, Session>();
   private recordingDirectories = new Map<string, string>();
@@ -88,6 +112,8 @@ export class Controller {
       this.recordingDirectories.set(s.id, join(root, "recordings", dir));
       s.meetingName ||= "Meeting";
       if (!terminal(s.status)) {
+        delete s.nextRetryAt;
+        finishConnectingAttempts(s, "cancelled");
         s.status = "interrupted";
         s.error = "The worker exited before recording finished";
         this.save(s);
@@ -151,6 +177,7 @@ export class Controller {
       createdAt: new Date().toISOString(),
       status: "queued",
       files: [],
+      attempts: [],
     };
     const dir = join(this.root, "recordings", folderPrefix(s.meetingName) + "_" + s.id);
     mkdirSync(dir, { recursive: true });
@@ -172,16 +199,32 @@ export class Controller {
     this.active = active;
     worker.on("message", (m: any) => {
       if (active.done) return;
-      if (
+      if (m?.type === "attempts") {
+        const attempts = attemptSnapshot(m.attempts);
+        if (!attempts) return;
+        s.attempts = attempts;
+        delete s.nextRetryAt;
+        if (s.status !== "stopping") {
+          delete s.error;
+          if (typeof m.nextRetryAt === "string" && Number.isFinite(Date.parse(m.nextRetryAt))) {
+            s.nextRetryAt = m.nextRetryAt;
+            s.status = "retrying";
+          } else if (["connecting", "connected"].includes(attempts.at(-1)!.outcome)) {
+            s.status = "joining";
+          }
+        }
+      } else if (
         m?.type === "status" &&
         ["joining", "waiting", "recording", "stopping"].includes(m.status)
       ) {
         if (s.status !== "stopping") s.status = m.status as Status;
-        if (typeof m.detail === "string") s.error = m.detail;
+        if (typeof m.detail === "string") s.error = redact(m.detail);
+        if (m.status === "recording") { delete s.error; delete s.nextRetryAt; }
       } else if (m?.type === "done") {
         active.done = true;
         s.files = Array.isArray(m.files) ? m.files : [];
-        s.error = m.error;
+        s.error = typeof m.error === "string" ? redact(m.error) : undefined;
+        delete s.nextRetryAt;
         s.status = m.error ? "failed" : "completed";
         s.endedAt = new Date().toISOString();
       }
@@ -189,8 +232,10 @@ export class Controller {
     });
     worker.on("exit", () => {
       if (!active.done) {
+        delete s.nextRetryAt;
         s.status = "interrupted";
         s.error = "The worker exited before confirming completion";
+        finishConnectingAttempts(s, "failed", s.error);
         s.endedAt = new Date().toISOString();
         this.save(s);
       }
@@ -199,6 +244,9 @@ export class Controller {
     worker.on("error", () => {
       s.status = "failed";
       s.error = "Bot worker error";
+      finishConnectingAttempts(s, "failed", s.error);
+      delete s.nextRetryAt;
+      s.endedAt = new Date().toISOString();
       active.done = true;
       this.save(s);
       worker.kill("SIGTERM");
@@ -213,6 +261,7 @@ export class Controller {
     if (!a || a.id !== id) return;
     if (a.stopping) return a.stopping;
     s.status = "stopping";
+    delete s.nextRetryAt;
     this.save(s);
     a.stopping = new Promise<void>((resolve) => {
       const timeout = setTimeout(() => a.worker.kill("SIGKILL"), 55000);

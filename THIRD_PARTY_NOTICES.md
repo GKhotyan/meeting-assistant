@@ -10,6 +10,7 @@ The following files differ from upstream revision `f1a62fbbdfd2c98cb162582d82c31
 
 | Local file | Changes |
 | --- | --- |
+| `vendor/vexa/join/zoom/admission.ts` | Distinguish authentication-only admission gates from retryable browser bot blocks. |
 | `vendor/vexa/join/_host.ts` | Redact credentials from structured logs. |
 | `vendor/vexa/join/shared/escalation.ts` | Disable VNC startup and report the need for manual admission help. |
 | `vendor/vexa/record-chunker/index.ts` | Drain pending audio writes before finalization; reject a configurable finalization timeout. |

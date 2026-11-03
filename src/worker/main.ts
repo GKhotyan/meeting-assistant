@@ -1,3 +1,4 @@
+import { connectWithRetries } from "./connect";
 import { maximizeZoomWindow } from "./window";
 import { watchBrowser } from "./lifecycle";
 import { readZoomParticipantCount, watchEmptyMeeting } from "./empty-meeting";
@@ -18,6 +19,7 @@ import { recordScreenshots } from "../recordings/screenshots";
 import { recordScreen } from "../recordings/writer";
 import { RecordingFile, StartInput } from "../session/types";
 import { redact } from "../session/security";
+import { join } from "node:path";
 let page: Page | undefined,
   context: BrowserContext | undefined,
   audio: Awaited<ReturnType<typeof createAudioRecorder>> | undefined,
@@ -31,6 +33,8 @@ let stopping: Promise<void> | undefined,
 let detachBrowser: (() => void) | undefined;
 let emptyMeetingMonitor: ReturnType<typeof watchEmptyMeeting> | undefined;
 let closeBrowser: (() => Promise<void>) | undefined;
+const connectionAbort = new AbortController();
+let connectionTask: Promise<Awaited<ReturnType<typeof launchZoomBrowser>>> | undefined;
 let config: any;
 let fault: string | undefined;
 let files: RecordingFile[] = [];
@@ -39,6 +43,7 @@ const send = (m: unknown) => {
 };
 async function stop(error?: string) {
   stopRequested = true;
+  connectionAbort.abort();
   if (error) fault = redact(error);
   if (stopping) return stopping;
   return (stopping = (async () => {
@@ -49,6 +54,8 @@ async function stop(error?: string) {
     clearInterval(popupTimer);
     const watchdog = setTimeout(() => process.exit(1), 45000);
     watchdog.unref();
+    // Await launch/admission cleanup before finalizing or exiting the worker.
+    await connectionTask?.catch(() => {});
     try {
       if (audio) files.push(await audio.stop());
     } catch (e) {
@@ -95,6 +102,7 @@ process.on("message", async (m: any) => {
     };
     setHooks({
       onState(state, detail) {
+        if (stopRequested) return;
         send({
           type: "status",
           status: state === "awaiting_admission" ? "waiting" : "joining",
@@ -105,29 +113,75 @@ process.on("message", async (m: any) => {
         });
       },
     });
-    const browser = await launchZoomBrowser();
-    context = browser.context;
-    page = browser.page;
-    closeBrowser = browser.close;
-    detachBrowser = watchBrowser(
-      page,
-      context,
-      () => void stop("The Zoom browser closed unexpectedly"),
-    );
+    let connectionAttempt = 0;
+    connectionTask = connectWithRetries({
+      signal: connectionAbort.signal,
+      open: () => {
+        connectionAttempt++;
+        return launchZoomBrowser();
+      },
+      async connect(browser) {
+        const attempt = connectionAttempt;
+        let detach: (() => void) | undefined;
+        const closed = new Promise<never>((_, reject) => {
+          detach = watchBrowser(browser.page, browser.context, () =>
+            reject(Error("The Zoom browser closed unexpectedly")));
+        });
+        try {
+          await Promise.race([
+            (async () => {
+              await joinZoomMeeting(browser.page, input.meetingUrl, input.botName, config);
+              connectionAbort.signal.throwIfAborted();
+              await waitForZoomMeetingAdmission(browser.page, 300000, config);
+            })(),
+            closed,
+          ]);
+        } catch (error) {
+          // Capture before retry cleanup navigates away or closes the failed page.
+          // Diagnostic failures must never replace the connection error.
+          if (!connectionAbort.signal.aborted && !browser.page.isClosed()) {
+            const filename = `connection-attempt-${attempt}-error.png`;
+            try {
+              await browser.page.screenshot({
+                path: join(m.sessionDir, filename),
+                type: "png",
+                timeout: 5000,
+              });
+              console.log(`Connection attempt ${attempt}: diagnostic screenshot saved to ${filename}`);
+            } catch (captureError) {
+              console.log(`Connection attempt ${attempt}: screenshot unavailable: ${redact(String(captureError))}`);
+            }
+          }
+          throw error;
+        } finally { detach?.(); }
+      },
+      async close(browser) {
+        try {
+          if (!browser.page.isClosed())
+            await leaveZoomMeeting(browser.page, config, "manual_leave");
+        } finally { await browser.close(); }
+      },
+      onChange(state) { send({ type: "attempts", ...state }); },
+    }).then(browser => {
+      context = browser.context;
+      page = browser.page;
+      closeBrowser = browser.close;
+      detachBrowser = watchBrowser(page, context,
+        () => void stop("The Zoom browser closed unexpectedly"));
+      return browser;
+    });
+    await connectionTask;
     if (stopRequested) return;
-    await joinZoomMeeting(page, input.meetingUrl, input.botName, config);
-    if (stopRequested) return;
-    await waitForZoomMeetingAdmission(page, 300000, config);
-    if (stopRequested) return;
-    await maximizeZoomWindow(page);
-    await dismissZoomPopups(page);
-    await page
+    // Everything after admission belongs to recording, never to the retry loop.
+    await maximizeZoomWindow(page!);
+    await dismissZoomPopups(page!);
+    await page!
       .getByRole("button", { name: "Got it", exact: true })
       .first()
       .click({ timeout: 1000 })
       .catch(() => {});
     // Some Zoom tenants require an explicit computer-audio confirmation after admission.
-    const computer = page
+    const computer = page!
       .getByRole("button", { name: /Join (?:with )?Computer Audio/i })
       .first();
     if (await computer.isVisible()) await computer.click({ timeout: 3000 });
@@ -136,7 +190,7 @@ process.on("message", async (m: any) => {
       5000,
     );
     audio = await createAudioRecorder(
-      page,
+      page!,
       m.sessionDir,
       (e) => void stop(e.message),
     );
@@ -158,7 +212,7 @@ process.on("message", async (m: any) => {
       await screenshots?.stop().catch(() => {});
       return;
     }
-    removeMonitor = startZoomRemovalMonitor(page, () => stop());
+    removeMonitor = startZoomRemovalMonitor(page!, () => stop());
     emptyMeetingMonitor = watchEmptyMeeting(
       () => readZoomParticipantCount(page!),
       () => {
@@ -169,6 +223,6 @@ process.on("message", async (m: any) => {
     void emptyMeetingMonitor.check();
     send({ type: "status", status: "recording" });
   } catch (e) {
-    await stop(String(e));
+    if (!stopRequested) await stop(String(e));
   }
 });

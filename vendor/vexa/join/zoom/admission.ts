@@ -1,3 +1,12 @@
+/**
+ * Derived from Vexa (Vexa-ai/vexa), licensed under Apache-2.0.
+ * Upstream revision: f1a62fbbdfd2c98cb162582d82c31fe8102acc89
+ * Upstream file: core/meetings/modules/join/src/zoom/admission.ts
+ * Modified for Meeting Assistant, 2026-10-29:
+ * Distinguish an authentication-only gate from a browser bot warning so
+ * connection retries never repeat a sign-in requirement.
+ * See LICENSE and THIRD_PARTY_NOTICES.md at the project root.
+ */
 import { AdmissionError } from '../shared/admission';
 import { Page } from "playwright";
 import { log, callAwaitingAdmissionCallback, callBlockedCallback } from "../_host";
@@ -175,6 +184,10 @@ export async function waitForZoomMeetingAdmission(
   // forever (the wall never becomes the waiting room or the meeting).
   {
     const wall = await detectZoomBotBlock(page);
+    if (wall === 'sign in to join') {
+      await callBlockedCallback(botConfig, 'auth_required', { matched: wall, phase: 'admission' });
+      throw new AdmissionError('auth_session_missing', '[Zoom Web] auth_required: sign in to join this meeting');
+    }
     if (wall) {
       log(`[Zoom Web] 🚫 Anti-bot wall detected (matched: "${wall}") — this meeting requires Zoom RTMS; bots cannot join via the web client. Failing fast.`);
       await callBlockedCallback(botConfig, 'zoom_requires_rtms', { matched: wall, phase: 'pre_admission_poll' });
@@ -214,6 +227,10 @@ export async function waitForZoomMeetingAdmission(
     // wall text stream in just after the page transition). Re-scan each poll so
     // we transition to terminal `blocked` instead of accruing unknown-state time.
     const wall = await detectZoomBotBlock(page);
+    if (wall === 'sign in to join') {
+      await callBlockedCallback(botConfig, 'auth_required', { matched: wall, phase: 'admission' });
+      throw new AdmissionError('auth_session_missing', '[Zoom Web] auth_required: sign in to join this meeting');
+    }
     if (wall) {
       log(`[Zoom Web] 🚫 Anti-bot wall detected during poll (matched: "${wall}") — requires Zoom RTMS. Failing fast.`);
       await callBlockedCallback(botConfig, 'zoom_requires_rtms', { matched: wall, phase: 'admission_poll' });

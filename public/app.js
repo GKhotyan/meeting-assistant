@@ -17,6 +17,7 @@ const labels = {
   queued: "Starting",
   joining: "Joining",
   waiting: "Waiting for admission",
+  retrying: "Waiting to retry",
   recording: "Recording",
   stopping: "Saving and leaving",
   completed: "Completed",
@@ -46,8 +47,18 @@ function duration(ms) {
   const hours = Math.floor(seconds / 3600);
   return (hours ? String(hours).padStart(2, "0") + ":" : "") + String(Math.floor(seconds / 60) % 60).padStart(2, "0") + ":" + String(seconds % 60).padStart(2, "0");
 }
+function retryLabel(nextRetryAt) {
+  const remaining = Math.max(0, Math.ceil((Date.parse(nextRetryAt) - Date.now()) / 1000));
+  return remaining ? "Retry in " + remaining + "s" : "Retry starting…";
+}
 function updateTimer() {
-  if (activeSession) $("active-timer").textContent = duration(Date.now() - Date.parse(activeSession.createdAt));
+  if (activeSession) {
+    $("active-timer").textContent = duration(Date.now() - Date.parse(activeSession.createdAt));
+    if (activeSession.status === "retrying" && activeSession.nextRetryAt)
+      $("active-status").textContent = retryLabel(activeSession.nextRetryAt);
+  }
+  for (const element of document.querySelectorAll(".retry-countdown"))
+    element.textContent = retryLabel(element.dataset.nextRetryAt);
 }
 function render(sessions) {
   latestSessions = sessions;
@@ -74,6 +85,10 @@ function render(sessions) {
   const screenshotState = new Map(
     [...$("sessions").querySelectorAll("details.screenshots")].map(details =>
       [details.dataset.sessionId, { open: details.open, scrollTop: details.querySelector(".screenshot-list").scrollTop }]),
+  );
+  const attemptState = new Map(
+    [...$("sessions").querySelectorAll("details.attempts")].map(details =>
+      [details.dataset.sessionId, { open: details.open, focused: details.querySelector("summary") === document.activeElement }]),
   );
   // Build off the page so layout never sees a partly rebuilt meeting list.
   const content = document.createDocumentFragment();
@@ -102,6 +117,51 @@ function render(sessions) {
       new Date(s.createdAt).toLocaleString("en-US") + " · " + s.botName + " · " + s.id.slice(0, 8);
     if (s.endedAt) meta.textContent += " · " + duration(Date.parse(s.endedAt) - Date.parse(s.createdAt)) + " elapsed";
     card.append(title, state, meta);
+    if (Array.isArray(s.attempts)) {
+      const details = document.createElement("details");
+      details.className = "attempts" + (s.attempts.some(attempt => attempt.outcome === "failed") ? " has-failures" : "");
+      details.dataset.sessionId = s.id;
+      details.open = attemptState.get(s.id)?.open || false;
+      const summary = document.createElement("summary");
+      summary.textContent = "Attempts: " + s.attempts.length + "/4";
+      const history = document.createElement("ol");
+      history.className = "attempt-history";
+      const outcomes = { connecting: "Connecting", connected: "Connected", failed: "Failed", cancelled: "Cancelled" };
+      for (const attempt of s.attempts) {
+        const entry = document.createElement("li"), heading = document.createElement("p");
+        heading.textContent = "Attempt " + attempt.number + " · " + (outcomes[attempt.outcome] || attempt.outcome) + " · " + new Date(attempt.startedAt).toLocaleString("en-US");
+        if (attempt.endedAt) heading.textContent += " → " + new Date(attempt.endedAt).toLocaleTimeString("en-US");
+        entry.append(heading);
+        if (attempt.error) {
+          const error = document.createElement("pre");
+          error.className = "error attempt-error";
+          error.textContent = attempt.error;
+          entry.append(error);
+        }
+        history.append(entry);
+      }
+      if (!s.attempts.length) {
+        const pending = document.createElement("p");
+        pending.className = "muted";
+        pending.textContent = "Waiting to start the first connection attempt.";
+        details.append(summary, pending);
+      } else details.append(summary, history);
+      card.append(details);
+      const connected = s.attempts.find(attempt => attempt.outcome === "connected");
+      if (connected) {
+        const result = document.createElement("p");
+        result.className = "muted attempt-result";
+        result.textContent = "Connected on attempt " + connected.number;
+        card.append(result);
+      }
+    }
+    if (s.status === "retrying" && s.nextRetryAt) {
+      const countdown = document.createElement("p");
+      countdown.className = "muted retry-countdown";
+      countdown.dataset.nextRetryAt = s.nextRetryAt;
+      countdown.textContent = retryLabel(s.nextRetryAt);
+      card.append(countdown);
+    }
     if (s.error) {
       const error = document.createElement("p");
       error.textContent = s.error;
@@ -178,6 +238,10 @@ function render(sessions) {
   $("sessions").replaceChildren(content);
   for (const details of $("sessions").querySelectorAll("details.screenshots")) {
     details.querySelector(".screenshot-list").scrollTop = screenshotState.get(details.dataset.sessionId)?.scrollTop || 0;
+  }
+  for (const details of $("sessions").querySelectorAll("details.attempts")) {
+    if (attemptState.get(details.dataset.sessionId)?.focused)
+      details.querySelector("summary").focus({ preventScroll: true });
   }
   window.scrollTo(scrollPosition.x, scrollPosition.y);
   renderedSessionsKey = renderKey;

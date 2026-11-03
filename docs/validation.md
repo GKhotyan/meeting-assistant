@@ -38,3 +38,14 @@ Live session 35767f64-5aba-4eda-adbe-c2249f7e0024: admitted 07:10:27 UTC, record
 Screen-share content was visually verified in a frame at 30 s. That recording still had a partially sized browser window. Subsequent isolated Xvfb/Fluxbox browser test exercised Browser.setWindowBounds and confirmed innerWidth=1920, innerHeight=975 (browser decorations occupy remaining display height); final full-screen live run pending image rebuild. Source final suite 18 passed; independent review found no Important introduced issues, typecheck pass.
 
 NOT checked: VPS, long-term resilience, all Zoom tenants, calendar, Deepgram, automatic network reconnection. Private meeting files remain under data/ and are excluded from Git/Docker build context.
+
+## Connection retry validation — 2026-10-29
+
+Implemented one-session connection retries with four attempts maximum and delays 10/10/60 seconds after failures, fresh browser cleanup, persistent redacted attempt history, cancellation, and expandable attempt counters.
+
+- `npm test`: 91 passed, including retry exhaustion/recovery, permanent outcomes, cancellation during launch/admission/delay, cleanup failure, URL credential classification, history persistence, worker exit/error, and real worker IPC lifecycle with simulated browser/Zoom/media boundaries.
+- `npm run test:vendor` and `npm run build`: passed.
+- Docker browser checks passed: attempts, workspace, recording files, schedules, scroll. Attempts check covers countdown, red history after success, expanded state and keyboard focus across polling, escaped/redacted errors, Stop, legacy sessions, and mobile layout. Desktop/mobile screenshots inspected; no horizontal overflow.
+- Independent read-only review found URL keywords suppressing transient retries; reproduced and fixed. Also fixed unfinished attempts remaining Connecting after worker exit/error. Regression tests observed RED then GREEN.
+- Built image `sha256:5cc34089243ffe433874dac3aceaf14c43d7fa20e9eafbee3b56299c3d5f333f`; recreated local app only after verifying no active sessions. Container healthy; `/health`, `/api/sessions`, and served retry UI checked. All 12 existing sessions remain available.
+- Behavioral smoke test inside deployed image confirmed four attempts, exact delays, browser cleanup order, successful recovery, and password redaction using simulated network errors. No additional live Zoom join was made during implementation; platform admission still depends on Zoom.
