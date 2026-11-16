@@ -25,17 +25,18 @@ function isZoomAudioInitUrl(url: string): boolean {
 
 export function startZoomRemovalMonitor(
   page: Page | null,
-  onRemoval?: () => void | Promise<void>
+  onRemoval?: (error?: string) => void | Promise<void>
 ): () => void {
   if (!page) return () => {};
 
   let stopped = false;
   let consecutiveLeaveButtonMisses = 0;
   const LEAVE_BUTTON_MISS_THRESHOLD = 3; // Require 3 consecutive misses (9s) before acting
+  const connectionFailureText = "Joining Meeting Timeout or Browser restriction";
   const joinedAtMs = Date.now();
   const GRACE_PERIOD_MS = 20_000; // 20s grace — Zoom audio init can take 10-15s with slow networks
 
-  const triggerRemoval = async (reason: string) => {
+  const triggerRemoval = async (reason: string, error?: string) => {
     if (stopped) return;
     stopped = true;
     const elapsed = ((Date.now() - joinedAtMs) / 1000).toFixed(1);
@@ -43,7 +44,7 @@ export function startZoomRemovalMonitor(
     log(`[Zoom Web] Current URL at removal: ${page.url()}`);
     const title = await page.title().catch(() => '<unknown>');
     log(`[Zoom Web] Current title at removal: "${title}"`);
-    onRemoval && await onRemoval();
+    onRemoval && await onRemoval(error);
   };
 
   // Fast path: detect navigation away from the meeting page immediately via framenavigated.
@@ -99,6 +100,10 @@ export function startZoomRemovalMonitor(
       if (modalVisible) {
         const modalText = await modalEl.textContent() ?? '';
         const trimmed = modalText.trim();
+        if (trimmed.includes(connectionFailureText)) {
+          await triggerRemoval(`Zoom connection failure: ${trimmed}`, connectionFailureText);
+          return;
+        }
         const isRemoval = zoomRemovalTexts.some(t => trimmed.includes(t));
         if (isRemoval) {
           await triggerRemoval(`Removal/end modal detected: "${trimmed}"`);
@@ -112,10 +117,11 @@ export function startZoomRemovalMonitor(
       const detected = await page.evaluate((texts: string[]) => {
         const bodyText = document.body.innerText || '';
         return texts.find(t => bodyText.includes(t)) || null;
-      }, zoomRemovalTexts).catch(() => null);
+      }, [...zoomRemovalTexts, connectionFailureText]).catch(() => null);
 
       if (detected) {
-        await triggerRemoval(`Removal detected via text: "${detected}"`);
+        await triggerRemoval(`Removal detected via text: "${detected}"`,
+          detected === connectionFailureText ? connectionFailureText : undefined);
         return;
       }
 

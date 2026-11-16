@@ -212,7 +212,7 @@ process.on("message", async (m: any) => {
       await screenshots?.stop().catch(() => {});
       return;
     }
-    removeMonitor = startZoomRemovalMonitor(page!, () => stop());
+    removeMonitor = startZoomRemovalMonitor(page!, (error) => stop(error));
     emptyMeetingMonitor = watchEmptyMeeting(
       () => readZoomParticipantCount(page!),
       () => {
