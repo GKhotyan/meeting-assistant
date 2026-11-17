@@ -106,10 +106,17 @@ function render(sessions) {
   }
   for (const s of visibleSessions) {
     const card = document.createElement("article"),
-      title = document.createElement("strong"),
+      title = document.createElement("a"),
       meta = document.createElement("p"),
       state = document.createElement("span");
     title.textContent = s.meetingName || "Meeting";
+    title.href = "#meeting/" + encodeURIComponent(s.id) + "/recording";
+    title.className = "meeting-title";
+    card.className = "meeting-card";
+    card.addEventListener("click", event => {
+      if (event.target.closest("a,button,input,select,summary,details,audio,video") || window.getSelection()?.toString()) return;
+      location.hash = title.hash;
+    });
     state.textContent = labels[s.status] || s.status;
     state.className = "badge " + s.status;
     meta.className = "muted";
@@ -117,6 +124,12 @@ function render(sessions) {
       new Date(s.createdAt).toLocaleString("en-US") + " · " + s.botName + " · " + s.id.slice(0, 8);
     if (s.endedAt) meta.textContent += " · " + duration(Date.parse(s.endedAt) - Date.parse(s.createdAt)) + " elapsed";
     card.append(title, state, meta);
+    const transcriptStatus = document.createElement("a");
+    const transcription = s.transcription?.status || "idle";
+    transcriptStatus.className = "transcription-link " + transcription;
+    transcriptStatus.href = "#meeting/" + encodeURIComponent(s.id) + "/transcription";
+    transcriptStatus.textContent = { idle: "No transcript", processing: "Transcribing…", completed: "Transcript ready", failed: "Transcription failed", interrupted: "Transcription interrupted" }[transcription] || "No transcript";
+    card.append(transcriptStatus);
     if (Array.isArray(s.attempts)) {
       const details = document.createElement("details");
       details.className = "attempts" + (s.attempts.some(attempt => attempt.outcome === "failed") ? " has-failures" : "");
@@ -216,7 +229,7 @@ function render(sessions) {
     remove.type = "button";
     remove.className = "delete-session";
     remove.textContent = deleting.has(s.id) ? "Deleting…" : "Delete recording";
-    remove.disabled = deleting.has(s.id) || !["completed", "failed", "interrupted"].includes(s.status);
+    remove.disabled = deleting.has(s.id) || s.transcription?.status === "processing" || !["completed", "failed", "interrupted"].includes(s.status);
     remove.addEventListener("click", async () => {
       if (deleting.has(s.id)) return;
       if (!window.confirm("Permanently delete this meeting and all its audio, video, screenshots, and other files? This cannot be undone.")) return;
@@ -262,6 +275,9 @@ async function refresh() {
 }
 
 function switchTab(name) {
+  window.MeetingView?.close();
+  $("panel-meeting").hidden = true;
+  if (location.hash.startsWith("#meeting/")) history.pushState(null, "", location.pathname + location.search);
   const titles = { now: ["Meetings", "Every conversation, ready to revisit."], schedule: ["Schedule", "Make room for the conversations that matter."], settings: ["Settings", "Make your assistant feel like part of the team."] };
   $("page-title").textContent = titles[name][0];
   $("page-description").textContent = titles[name][1];
@@ -478,6 +494,78 @@ for (const id of ["settings-bot", "settings-mode", "botName", "recordingMode"]) 
   $(id).addEventListener("input", () => { settingsDirty[id.startsWith("settings-") ? "settings" : "drawer"] = true; });
 }
 $("settings-form").addEventListener("submit", saveSettings);
+let deepgramConfigured = false;
+let deepgramBusy = false;
+let deepgramLoading = true;
+function deepgramControls() {
+  const draft = !!$("deepgram-key").value.trim();
+  $("deepgram-key").disabled = deepgramBusy;
+  $("deepgram-toggle").disabled = deepgramBusy;
+  $("deepgram-save").disabled = deepgramBusy || deepgramLoading || !draft;
+  $("deepgram-check").disabled = deepgramBusy || deepgramLoading || (!draft && !deepgramConfigured);
+  $("deepgram-remove").disabled = deepgramBusy || deepgramLoading || !deepgramConfigured;
+}
+function deepgramMask() {
+  $("deepgram-key").type = "password";
+  $("deepgram-toggle").textContent = "Show key";
+  $("deepgram-toggle").setAttribute("aria-pressed", "false");
+}
+function deepgramStatus() {
+  $("deepgram-status").textContent = deepgramConfigured ? "Key saved. Connection has not been checked." : "No key saved.";
+}
+$("deepgram-toggle").addEventListener("click", () => {
+  const show = $("deepgram-key").type === "password";
+  $("deepgram-key").type = show ? "text" : "password";
+  $("deepgram-toggle").textContent = show ? "Hide key" : "Show key";
+  $("deepgram-toggle").setAttribute("aria-pressed", String(show));
+});
+$("deepgram-key").addEventListener("input", () => {
+  $("deepgram-feedback").textContent = "";
+  if (!deepgramLoading) deepgramStatus();
+  deepgramControls();
+});
+async function deepgramAction(action) {
+  if (deepgramBusy || deepgramLoading) return;
+  deepgramBusy = true;
+  deepgramControls();
+  deepgramStatus();
+  const feedback = $("deepgram-feedback");
+  feedback.className = "muted";
+  feedback.textContent = action === "check" ? "Checking connection…" : action === "save" ? "Saving key…" : "Removing key…";
+  try {
+    const value = await api("/api/settings/deepgram" + (action === "check" ? "/check" : ""),
+      action === "check" ? "POST" : action === "save" ? "PUT" : "DELETE",
+      action === "remove" ? {} : { apiKey: $("deepgram-key").value });
+    if (action === "check") {
+      feedback.className = value.valid ? "muted" : "error";
+      feedback.textContent = ($("deepgram-key").value.trim() ? "Entered key: " : "Saved key: ") + value.message;
+      if (value.valid && !$("deepgram-key").value.trim()) $("deepgram-status").textContent = "Key saved. Connection verified.";
+    } else {
+      deepgramConfigured = value.configured;
+      $("deepgram-key").value = "";
+      deepgramMask();
+      deepgramStatus();
+      feedback.textContent = action === "save" ? "API key saved." : "API key removed.";
+    }
+  } catch (error) {
+    feedback.className = "error";
+    feedback.textContent = error.message;
+  } finally {
+    deepgramBusy = false;
+    deepgramControls();
+  }
+}
+$("deepgram-form").addEventListener("submit", event => { event.preventDefault(); deepgramAction("save"); });
+$("deepgram-check").addEventListener("click", () => deepgramAction("check"));
+$("deepgram-remove").addEventListener("click", () => deepgramAction("remove"));
+api("/api/settings/deepgram").then(value => {
+  deepgramConfigured = value.configured;
+  deepgramStatus();
+}).catch(error => {
+  $("deepgram-status").textContent = "Key status unavailable.";
+  $("deepgram-feedback").className = "error";
+  $("deepgram-feedback").textContent = error.message;
+}).finally(() => { deepgramLoading = false; deepgramControls(); });
 $("botName").addEventListener("change", saveSettings);
 $("recordingMode").addEventListener("change", saveSettings);
 $("stop").addEventListener("click", async () => {
@@ -513,3 +601,5 @@ $("record-meeting").addEventListener("click", () => {
 $("close-record").addEventListener("click", () => $("record-dialog").close());
 $("record-dialog").addEventListener("close", () => $("record-meeting").focus());
 setInterval(updateTimer, 1000);
+
+window.MeetingView.init();

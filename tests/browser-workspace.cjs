@@ -2,7 +2,7 @@ const assert = require('node:assert/strict');
 const { readFileSync } = require('node:fs');
 const { chromium } = require(process.env.PLAYWRIGHT_MODULE || '/app/node_modules/playwright');
 (async () => {
-  const browser = await chromium.launch({ headless: true, args: ['--no-sandbox'] });
+  const browser = await chromium.launch({ headless: true, channel: process.env.PLAYWRIGHT_CHANNEL, args: ['--no-sandbox'] });
   const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
   const errors = [];
   page.on('pageerror', e => errors.push(e.message));
@@ -15,6 +15,7 @@ const { chromium } = require(process.env.PLAYWRIGHT_MODULE || '/app/node_modules
   ];
   await page.route('http://workspace.test/**', async route => {
     const request = route.request(), path = new URL(request.url()).pathname;
+    if (path === '/api/settings/deepgram') return route.fulfill({json:{configured:false}});
     if (path === '/api/settings') {
       if (request.method() === 'PUT') {
         if (settingsPending) { const pending = settingsPending; settingsPending = null; await pending; }

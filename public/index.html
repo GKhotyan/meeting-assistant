@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1" />
 <title>Meeting Assistant</title>
 <link rel="stylesheet" href="/style.css" />
+<script defer src="/meeting.js"></script>
 <script defer src="/app.js"></script>
 </head>
 <body>
@@ -29,6 +30,33 @@
     <div class="overview"><div><span class="overview-icon" aria-hidden="true">▤</span><div><span class="metric" id="meeting-count">0</span><span class="metric-label">Recorded meetings</span></div></div><div><span class="overview-icon" aria-hidden="true">◷</span><div><span class="metric" id="schedule-count">0</span><span class="metric-label">Active schedules</span></div></div><div class="storage-note"><span class="local-dot"></span><div><strong>Stored on your server</strong><span class="metric-label">Audio, video & screenshots</span></div></div></div>
     <section class="library"><div class="section-title"><div><h2>All meetings <span id="result-count" class="count-pill">0</span></h2><p class="muted">Your conversations and recording files, in one place.</p></div><label class="search-label"><span class="sr-only">Search meetings</span><input id="meeting-search" type="search" placeholder="Search meetings…" /></label></div><div class="list-heading"><span>MEETING / FILES</span><span>STATUS</span></div><div id="sessions"></div></section>
   </div>
+  <section id="panel-meeting" hidden aria-label="Meeting details">
+    <a id="meeting-back" class="back-link" href="#"><span aria-hidden="true">← </span>Back to meetings</a>
+    <p id="meeting-meta" class="muted"></p>
+    <p id="meeting-error" class="error" role="status"></p>
+    <nav class="meeting-tabs" role="tablist" aria-label="Meeting information">
+      <button id="meeting-tab-recording" role="tab" aria-selected="true" aria-controls="meeting-panel-recording">Recording</button>
+      <button id="meeting-tab-transcription" role="tab" aria-selected="false" aria-controls="meeting-panel-transcription" tabindex="-1">Transcription</button>
+    </nav>
+    <div id="meeting-player" class="meeting-player" hidden><label for="meeting-audio">Meeting audio</label><audio id="meeting-audio" controls preload="metadata"></audio></div>
+    <section id="meeting-panel-recording" role="tabpanel" aria-labelledby="meeting-tab-recording"><h2>Recording files</h2><div id="meeting-files" class="meeting-files"></div></section>
+    <section id="meeting-panel-transcription" role="tabpanel" aria-labelledby="meeting-tab-transcription" hidden>
+      <h2>Transcription</h2>
+      <p id="transcription-status" class="muted" role="status" aria-live="polite"></p>
+      <form id="transcription-form">
+        <div class="transcription-options">
+          <div class="transcription-field"><label for="transcription-file">Audio file</label><select id="transcription-file" required></select></div>
+          <div class="transcription-field"><label for="transcription-language">Audio language</label><select id="transcription-language"><option value="ru">Russian</option><option value="en">English</option><option value="de">German</option><option value="fr">French</option><option value="es">Spanish</option><option value="it">Italian</option><option value="pt">Portuguese</option><option value="uk">Ukrainian</option><option value="multi">Multilingual</option></select></div>
+          <label class="diarize-option"><input id="transcription-diarize" type="checkbox" />Identify speakers</label>
+        </div>
+        <p class="muted">Sends the selected audio to Deepgram using your saved key. Provider charges may apply. Processing continues when you leave this page.</p>
+        <button id="transcription-submit" type="submit" disabled>Get transcription</button>
+        <a id="transcription-settings" href="#settings" hidden>Configure Deepgram in Settings</a>
+        <p id="transcription-feedback" role="status" aria-live="polite"></p>
+      </form>
+      <div id="transcript-result" class="transcript-result"></div>
+    </section>
+  </section>
   <section id="panel-schedule" role="tabpanel" aria-labelledby="tab-schedule" hidden>
     <div class="section-title"><div><h2>Recurring meetings</h2><p class="muted">Set it once. Be there every week.</p></div><button id="add-schedule" type="button">Add meeting</button></div>
     <p class="muted">The bot joins automatically while the service is running. Overlapping meetings are skipped.</p>
@@ -63,6 +91,16 @@
   <section id="panel-settings" role="tabpanel" aria-labelledby="tab-settings" hidden>
     <h2>Recording preferences</h2><p class="muted">Defaults for your next meeting. Changes do not affect a recording in progress.</p>
     <form id="settings-form" class="settings-form"><label>Bot name<input id="settings-bot" required maxlength="100" /></label><label>Default recording mode<select id="settings-mode"><option value="video">Full video</option><option value="screenshots">Screenshots every 15 seconds</option><option value="audio">Audio only</option></select></label><p class="muted">Audio is recorded in every mode. Scheduled meetings use their own recording mode and bot name.</p><button type="submit">Save settings</button></form>
+    <form id="deepgram-form" class="settings-form integration-settings" aria-labelledby="deepgram-title">
+      <h2 id="deepgram-title">Deepgram</h2>
+      <p class="muted">Configure your API key for meeting transcription.</p>
+      <p id="deepgram-status" class="muted" role="status">Loading key status…</p>
+      <label for="deepgram-key">Deepgram API key</label>
+      <div class="key-entry"><input id="deepgram-key" type="password" maxlength="512" autocomplete="off" spellcheck="false" autocapitalize="none" aria-describedby="deepgram-help" /><button id="deepgram-toggle" class="secondary" type="button" aria-controls="deepgram-key" aria-pressed="false">Show key</button></div>
+      <p id="deepgram-help" class="muted">Keys are encrypted on this server. Leave the field empty to check the saved key. Checking a new key does not save it or send recordings.</p>
+      <div class="actions"><button id="deepgram-save" type="submit" disabled>Save key</button><button id="deepgram-check" class="secondary" type="button" disabled>Check connection</button><button id="deepgram-remove" class="secondary" type="button" disabled>Remove key</button></div>
+      <p id="deepgram-feedback" role="status" aria-live="polite"></p>
+    </form>
   </section>
   <footer><span id="connection">Connecting…</span><span>Meeting Assistant <span aria-hidden="true">·</span> Your conversations, on your terms.</span></footer>
 </main>

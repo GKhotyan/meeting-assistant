@@ -1,8 +1,10 @@
 # Meeting Assistant
 
-**Your Zoom recordings, on your own disk.**
+**Record Zoom meetings. Turn audio into timestamped transcripts. Keep the results on your own infrastructure.**
 
-A self-hosted Zoom recorder with a simple web interface. Join a meeting as a guest, capture audio separately, and choose full-screen video, timestamped screenshots, or audio only. Run it locally with Docker or on your own Linux server.
+Meeting Assistant is a self-hosted application for recording and transcribing Zoom meetings. It joins as a guest, captures audio alongside video or timestamped screenshots, and turns completed recordings into readable transcripts through Deepgram Nova-3. Manage recordings, recurring meetings, and transcription from one web interface; deploy locally with Docker or on your own Linux server.
+
+Recordings and transcripts are stored on your host. Transcription is optional: audio is sent to Deepgram only when you explicitly start processing. Recording itself requires no transcription API key.
 
 [Русский](README.ru.md) · [Validation notes](docs/validation.md) · [Third-party notices](THIRD_PARTY_NOTICES.md)
 
@@ -15,7 +17,9 @@ A self-hosted Zoom recorder with a simple web interface. Join a meeting as a gue
 - **Persistent recordings** — files live on your host, survive container recreation, and can be downloaded from the interface.
 - **Background sessions** — close the browser tab while recording continues; stop a session to finalize files and leave Zoom.
 - **Recurring meetings** — choose weekdays, local time, time zone, bot name, and recording mode; the bot joins automatically while the service is running.
-- **No service account or API key required** — no Vexa account, transcription provider, or calendar integration needed.
+- **Deepgram transcription** — Nova-3 speech recognition with language selection, formatted text, timestamps, and optional speaker diarization. Click a timestamp to play the corresponding audio.
+- **Persistent transcripts** — results and processing status are saved alongside each recording and remain available after a restart.
+- **Optional external processing** — recording works without a Vexa account or transcription API key; configure your own Deepgram key when you need transcripts.
 
 The default participant name is **Engineering Assistant**. You can change it in the interface independently of the application name.
 
@@ -71,6 +75,20 @@ The list shows the bot name, next launch, and most recent attempt. The service c
 
 Rules and launch claims live in `data/schedules.json` and survive container recreation. Time zones are independent of the container's clock zone. Nonexistent times during daylight-saving transitions are skipped; repeated local times run once.
 
+## Deepgram settings
+
+Open **Settings → Deepgram** to enter, show/hide, save, check or remove an API key. **Check connection** checks the entered key without saving it; an empty field uses the saved key. Saving does not verify connectivity. The server checks [Deepgram authentication](https://developers.deepgram.com/guides/fundamentals/authenticating) with a 10-second timeout, without uploading recordings. This confirms authentication only, not transcription permissions or available balance. Summaries are not implemented yet.
+
+Credentials are encrypted with AES-256-GCM in `data/settings/api-keys.json`; the encryption key is stored separately in `data/secrets/master.key`. Directories use permissions `0700`, files `0600`. Both survive Docker container recreation in the existing `/data` volume and are excluded from Git and the Docker build context. If using `ASSISTANT_DATA_DIR` (or `DATA_DIR` outside Docker), these paths are relative to that directory. Back up both files together and protect the backup: access to both allows decryption. A missing or damaged master key must be restored from backup; it is never silently replaced while encrypted credentials exist. Saved API keys are never returned to the browser.
+
+## Meeting transcripts
+
+Click a meeting title or the free area of its card to open **Recording / Transcription**. The card's transcript status opens Transcription directly. Existing download and delete buttons keep their own actions; browser Back and meeting links work.
+
+After recording completes, open **Transcription**, select a finalized audio file, language (Russian by default), and optionally **Identify speakers** (off by default). **Get transcription** explicitly uploads the selected audio to [Deepgram's pre-recorded API](https://developers.deepgram.com/reference/speech-to-text/listen-pre-recorded), using Nova-3, smart formatting and utterances. Provider charges may apply. Viewing a meeting never uploads audio. One transcription can run at a time across the application; processing continues if the page is closed. A saved API key is required.
+
+The transcript contains timestamps and, when enabled, speaker numbers rather than participant identities. Click a timestamp to seek and play the meeting audio. Results and job status persist in `transcription.json` alongside recording files. Failed retries keep the previous successful result. After a server restart an unfinished job is marked interrupted and is never automatically resubmitted: Deepgram may already have processed and charged for the first request. Review that state before manually retrying. Meetings cannot be deleted while their transcription is processing. Inputs are limited to finalized nonempty audio files up to 2 GB, with a request timeout of 11 minutes.
+
 ## How it works
 
 ```mermaid
@@ -83,7 +101,14 @@ flowchart LR
     Zoom --> Visuals[Video or screenshots]
     Audio --> Disk[Host recording directory]
     Visuals --> Disk
+    UI -->|Start transcription| Transcription[Transcription service]
+    Disk -->|Selected finalized audio| Transcription
+    Transcription -->|HTTPS audio upload| Deepgram[Deepgram Nova-3 API]
+    Deepgram -->|Text and timed segments| Transcription
+    Transcription -->|transcription.json| Disk
 ```
+
+The capture pipeline runs on your infrastructure. Speech recognition runs in Deepgram; the application saves the returned transcript locally and exposes it through the meeting page. Diarization distinguishes speakers by number; it does not identify Zoom participants. Summaries are not currently implemented.
 
 Built with **TypeScript**, **Playwright / Chromium**, **FFmpeg**, and **Docker Compose**. Browser joining and audio chunking reuse code from [Vexa](https://github.com/Vexa-ai/vexa); this project supplies its own session management, local storage, capture pipeline, and web interface. See [third-party notices](THIRD_PARTY_NOTICES.md) for provenance and modifications.
 
@@ -108,7 +133,7 @@ Open http://localhost:8088 on your computer. Recordings reside on the server; do
 - One meeting at a time; standard Zoom `/j/<id>` and `/wc/...` links.
 - The bot joins with its camera and microphone disabled. Guest-access restrictions, SSO, and CAPTCHA may prevent joining.
 - The bot leaves automatically after two uninterrupted minutes alone in a meeting when the participant count is available.
-- No automatic reconnection, transcription, summaries, or external calendar integration.
+- Transcription is manual; summaries and external calendar integration are not available.
 - No storage quota or automatic retention policy. Recovery chunks consume extra disk space.
 - Interrupted sessions are marked as interrupted after restart; existing files remain available on disk.
 - A real Zoom recording was validated on Apple Silicon on 2026-10-26. Linux VPS / amd64 validation remains pending. See [validation notes](docs/validation.md) for evidence and limitations.
@@ -128,7 +153,9 @@ npm run build
 | --- | --- |
 | `src/session` | Session state and worker lifecycle |
 | `src/worker` | Browser automation and media capture |
-| `src/recordings` | File writing and finalization |
+| `src/recordings` | File writing, finalization, and validated file access |
+| `src/transcription` | Transcription jobs, provider requests, and persisted results |
+| `src/integrations` | Deepgram credentials and connection checks |
 | `src/server`, `public` | HTTP API and web interface |
 | `vendor/vexa` | Attributed upstream browser and chunking modules |
 | `tests` | Application tests |

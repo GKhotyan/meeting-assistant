@@ -7,7 +7,7 @@ import { EventEmitter } from "node:events";
 import { Controller } from "../src/session/controller";
 import { createApp } from "../src/server/app";
 import { Scheduler } from "../src/session/schedules";
-async function app(password?: string, existingRoot?: string, publicOrigin?: string) {
+async function app(password?: string, existingRoot?: string, publicOrigin?: string, deepgramFetch?: typeof fetch) {
   const root = existingRoot ?? mkdtempSync(join(tmpdir(), "ea-api-"));
   const workers: any[] = [];
   const c = new Controller(root, () => {
@@ -20,6 +20,7 @@ async function app(password?: string, existingRoot?: string, publicOrigin?: stri
   const server = createApp(c, {
     password,
     publicOrigin,
+    deepgramFetch,
     publicDir: join(process.cwd(), "public"),
     scheduler: new Scheduler(root, c),
   });
@@ -33,6 +34,49 @@ async function app(password?: string, existingRoot?: string, publicOrigin?: stri
     close: () => new Promise<void>((r) => server.close(() => r())),
   };
 }
+test("Deepgram API keeps secrets private and checks drafts without saving them", async () => {
+  const checked: string[] = [];
+  const transport: typeof fetch = async (_url, options) => {
+    checked.push((options?.headers as Record<string, string>).Authorization);
+    return Response.json({ subject: "subject", accessor: "accessor" });
+  };
+  const a = await app(undefined, undefined, undefined, transport);
+  const send = (method: string, value: unknown, suffix = "") => fetch(a.base + "/api/settings/deepgram" + suffix, {
+    method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(value),
+  });
+  try {
+    assert.deepEqual(await (await fetch(a.base + "/api/settings/deepgram")).json(), { configured: false });
+    assert.equal((await send("POST", {}, "/check")).status, 400);
+    assert.equal((await send("PUT", { apiKey: "saved-secret" })).status, 200);
+    assert.equal((await (await send("POST", { apiKey: "draft-secret" }, "/check")).json()).valid, true);
+    assert.equal((await (await send("POST", { apiKey: "" }, "/check")).json()).valid, true);
+    assert.deepEqual(checked, ["Token draft-secret", "Token saved-secret"]);
+    assert.equal((await send("POST", { apiKey: "\n" }, "/check")).status, 400);
+    for (const invalid of [null, [], { apiKey: 42 }, { apiKey: "bad\nkey" }, { apiKey: "" }])
+      assert.equal((await send("PUT", invalid)).status, 400);
+    const restored = await app(undefined, a.root, undefined, transport);
+    try {
+      assert.deepEqual(await (await fetch(restored.base + "/api/settings/deepgram")).json(), { configured: true });
+      const preferences = await fetch(a.base + "/api/settings", {method: "PUT", headers: {"Content-Type": "application/json"}, body: JSON.stringify({botName: "Changed"})});
+      assert.equal(preferences.status, 200);
+      assert.deepEqual(await (await fetch(a.base + "/api/settings/deepgram")).json(), { configured: true });
+      assert.deepEqual(await (await send("DELETE", {})).json(), { configured: false });
+      assert.deepEqual(await (await fetch(restored.base + "/api/settings/deepgram")).json(), { configured: false });
+    } finally { await restored.close(); }
+  } finally { await a.close(); }
+});
+test("Deepgram routes require app authentication and reject cross-site writes/checks", async () => {
+  const a = await app("secret");
+  try {
+    for (const [method, suffix] of [["GET", ""], ["PUT", ""], ["DELETE", ""], ["POST", "/check"]]) {
+      const url = a.base + "/api/settings/deepgram" + suffix;
+      const headers = { "Content-Type": "application/json", Authorization: "Basic " + Buffer.from("assistant:secret").toString("base64") };
+      assert.equal((await fetch(url, {method, headers: {"Content-Type": "application/json"}})).status, 401);
+      if (method !== "GET") assert.equal((await fetch(url, {method, headers: {...headers, Origin: "https://evil.test"}, body: "{}"})).status, 403);
+      else assert.equal((await fetch(url, {headers})).status, 200);
+    }
+  } finally { await a.close(); }
+});
 test("API stores name, rejects invalid input and concurrent launch", async () => {
   const a = await app();
   try {
@@ -278,4 +322,49 @@ test("named folder recordings download and delete through UUID API routes after 
     assert.equal(existsSync(dir), false);
     assert.equal(restored.c.list().length, 0);
   } finally { await restored?.close(); await a.close(); }
+});
+
+test('transcription API runs in background, protects uploads/deletion and supports seek ranges', async()=>{
+  let release!:()=>void;
+  const gate=new Promise<void>(resolve=>{release=resolve;});
+  const a=await app(undefined,undefined,undefined,async()=>{
+    await gate; return Response.json({results:{channels:[{alternatives:[{transcript:'Meeting notes'}]}],utterances:[{start:1,end:2,transcript:'Meeting notes'}]}});
+  });
+  try {
+    const session=await a.c.startSession({meetingUrl:'https://zoom.us/j/12345678901',meetingName:'Daily',botName:'Notes'});
+    const id=session.id, dir=a.c.getSessionDirectory(id), base=a.base+'/api/sessions/'+id;
+    writeFileSync(join(dir,'audio.webm'),'0123456789');
+    a.workers[0].emit('message',{type:'done',files:[{id:'audio',name:'audio.webm',kind:'audio',status:'ready',bytes:10,startedAtMs:0}]});
+    a.workers[0].emit('exit',0,null);
+    const headers={'Content-Type':'application/json'};
+    await fetch(a.base+'/api/settings/deepgram',{method:'PUT',headers,body:JSON.stringify({apiKey:'fixture-key'})});
+    assert.equal((await fetch(base+'/transcription',{method:'POST',headers:{...headers,Origin:'https://evil.test'},body:'{}'})).status,403);
+    const start=await fetch(base+'/transcription',{method:'POST',headers,body:'{}'});
+    assert.equal(start.status,202); assert.equal((await start.json()).status,'processing');
+    assert.equal((await fetch(base+'/transcription',{method:'POST',headers,body:'{}'})).status,409);
+    assert.equal((await fetch(base,{method:'DELETE',headers})).status,409);
+    assert.equal((await (await fetch(a.base+'/api/sessions')).json()).sessions[0].transcription.status,'processing');
+    release();
+    let result;
+    for(let i=0;i<100;i++) {
+      result=await (await fetch(base+'/transcription')).json();
+      if(result.status!=='processing')break;
+      await new Promise(resolve=>setTimeout(resolve,5));
+    }
+    assert.equal(result.status,'completed'); assert.equal(result.transcript.text,'Meeting notes');
+    for(const [range,want,contentRange] of [['bytes=2-5','2345','bytes 2-5/10'],['bytes=7-','789','bytes 7-9/10'],['bytes=-3','789','bytes 7-9/10']]) {
+      const audio=await fetch(base+'/files/audio?play=1',{headers:{Range:range}});
+      assert.equal(audio.status,206); assert.equal(audio.headers.get('content-range'),contentRange);
+      assert.match(audio.headers.get('content-disposition')! ,/^inline/);
+      assert.equal(await audio.text(),want);
+    }
+    assert.equal((await fetch(base+'/files/audio',{headers:{Range:'bytes=99-'}})).status,416);
+    assert.equal((await fetch(base,{method:'DELETE',headers})).status,200);
+  } finally {release();await a.close();}
+});
+
+test('transcription endpoints require authentication',async()=>{
+  const a=await app('secret');
+  try {for(const method of ['GET','POST'])assert.equal((await fetch(a.base+'/api/sessions/test/transcription',{method,headers:{'Content-Type':'application/json'}})).status,401);}
+  finally {await a.close();}
 });

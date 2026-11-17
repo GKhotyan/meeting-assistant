@@ -1,21 +1,24 @@
 import { createServer, IncomingMessage, ServerResponse } from "node:http";
 import {
   readFileSync,
-  statSync,
-  realpathSync,
+  closeSync,
   createReadStream,
-  existsSync,
 } from "node:fs";
-import { join, basename, sep } from "node:path";
+import { join } from "node:path";
 import { createHash, timingSafeEqual } from "node:crypto";
 import { Controller } from "../session/controller";
 import { AppError } from "../session/types";
 import type { Scheduler } from "../session/schedules";
+import { DeepgramSettings, checkDeepgram } from "../integrations/deepgram";
+import { Transcriptions } from "../transcription/service";
+import { openReadyFile } from "../recordings/access";
 const hash = (s: string) => createHash("sha256").update(s).digest();
 export function createApp(
   controller: Controller,
-  options: { password?: string; publicDir: string; scheduler?: Scheduler; publicOrigin?: string },
+  options: { password?: string; publicDir: string; scheduler?: Scheduler; publicOrigin?: string; deepgramFetch?: typeof fetch },
 ) {
+  const deepgram = new DeepgramSettings(controller.root);
+  const transcriptions = new Transcriptions(controller, deepgram, options.deepgramFetch);
   const publicUrl = options.publicOrigin ? new URL(options.publicOrigin) : undefined;
   if (publicUrl && (!["http:", "https:"].includes(publicUrl.protocol) || publicUrl.username || publicUrl.password || publicUrl.pathname !== "/" || publicUrl.search || publicUrl.hash))
     throw new Error("PUBLIC_ORIGIN must be an HTTP(S) origin, without a path, credentials, query or fragment");
@@ -104,6 +107,23 @@ export function createApp(
         } else throw new AppError(405, "Method not allowed");
         return;
       }
+      if (path === "/api/settings/deepgram/check" && req.method === "POST") {
+        const value = await body();
+        if (!value || typeof value !== "object" || Array.isArray(value) ||
+            (value.apiKey !== undefined && (typeof value.apiKey !== "string" || value.apiKey.length > 512 || /[^\x20-\x7e]/.test(value.apiKey))))
+          throw new AppError(400, "Enter a valid API key.");
+        const key = value.apiKey?.trim() ? value.apiKey : deepgram.key();
+        if (!key) throw new AppError(400, "Enter or save a Deepgram API key first.");
+        json(200, await checkDeepgram(key, options.deepgramFetch));
+        return;
+      }
+      if (path === "/api/settings/deepgram") {
+        if (req.method === "GET") json(200, deepgram.metadata());
+        else if (req.method === "PUT") json(200, deepgram.save((await body())?.apiKey));
+        else if (req.method === "DELETE") json(200, deepgram.remove());
+        else throw new AppError(405, "Method not allowed");
+        return;
+      }
       if (path === "/api/settings") {
         if (req.method === "GET") json(200, controller.settings());
         else if (req.method === "PUT")
@@ -112,9 +132,16 @@ export function createApp(
         return;
       }
       if (path === "/api/sessions") {
-        if (req.method === "GET") json(200, { sessions: controller.list() });
+        if (req.method === "GET") json(200, { sessions: controller.list().map(session => ({ ...session, transcription: transcriptions.summary(session.id) })) });
         else if (req.method === "POST")
           json(201, await controller.startSession(await body()));
+        else throw new AppError(405, "Method not allowed");
+        return;
+      }
+      const transcription = path.match(/^\/api\/sessions\/([a-zA-Z0-9-]+)\/transcription$/);
+      if (transcription) {
+        if (req.method === "GET") json(200, transcriptions.get(transcription[1]));
+        else if (req.method === "POST") json(202, transcriptions.start(transcription[1], await body()));
         else throw new AppError(405, "Method not allowed");
         return;
       }
@@ -130,6 +157,7 @@ export function createApp(
       }
       const detail = path.match(/^\/api\/sessions\/([a-zA-Z0-9-]+)$/);
       if (detail && req.method === "DELETE") {
+        if (transcriptions.isRunning(detail[1])) throw new AppError(409, "Wait for transcription to finish before deleting this meeting.");
         controller.deleteSession(detail[1]);
         json(200, { status: "deleted" });
         return;
@@ -145,33 +173,42 @@ export function createApp(
       );
       if (download && req.method === "GET") {
         const [_, sid, fid] = download;
-        const session = controller.getSession(sid),
-          file = session?.files.find(
-            (f) => f.id === fid && f.status === "ready",
-          );
-        if (!file || basename(file.name) !== file.name)
-          throw new AppError(404, "File not found");
-        const dir = controller.getSessionDirectory(sid),
-          target = join(dir, file.name);
-        if (
-          !existsSync(target) ||
-          !realpathSync(target).startsWith(realpathSync(dir) + sep) ||
-          !statSync(target).isFile()
-        )
-          throw new AppError(404, "File not found");
-        res.writeHead(200, {
+        const opened = openReadyFile(controller, sid, fid);
+        const { fd, file, size } = opened;
+        let start = 0, end = size - 1;
+        let partial = false;
+        if (req.headers.range) {
+          const match = /^bytes=(\d*)-(\d*)$/.exec(req.headers.range);
+          let valid = !!match && !!(match[1] || match[2]);
+          if (match && valid) {
+            if (!match[1]) { start = Math.max(0, size - Number(match[2])); valid = Number(match[2]) > 0; }
+            else { start = Number(match[1]); if (match[2]) end = Math.min(Number(match[2]), size - 1); }
+            valid = valid && Number.isSafeInteger(start) && Number.isSafeInteger(end) && start >= 0 && start <= end && start < size;
+          }
+          if (!valid) {
+            closeSync(fd);
+            res.writeHead(416, { "Content-Range": "bytes */" + size });
+            res.end(); return;
+          }
+          partial = true;
+        }
+        res.writeHead(partial ? 206 : 200, {
           "Content-Type": file.kind === "audio" ? "audio/webm" : file.kind === "screenshot" ? "image/jpeg" : "video/mp4",
-          "Content-Length": statSync(target).size,
-          "Content-Disposition": `attachment; filename="${sid}-${file.name}"`,
+          "Content-Length": partial ? end - start + 1 : size,
+          "Accept-Ranges": "bytes",
+          ...(partial ? { "Content-Range": `bytes ${start}-${end}/${size}` } : {}),
+          "Content-Disposition": `${url.searchParams.get("play") === "1" ? "inline" : "attachment"}; filename="${sid}-${file.name.replace(/["\r\n]/g, "_")}"`,
         });
-        const stream = createReadStream(target);
+        const stream = createReadStream("", { fd, autoClose: true, ...(partial ? { start, end } : {}) });
         stream.on("error", () => res.destroy());
+        res.on("close", () => stream.destroy());
         stream.pipe(res);
         return;
       }
       const assets: Record<string, string> = {
         "/": "index.html",
         "/app.js": "app.js",
+        "/meeting.js": "meeting.js",
         "/style.css": "style.css",
       };
       if (req.method === "GET" && assets[path]) {
