@@ -275,6 +275,7 @@ async function refresh() {
 }
 
 function switchTab(name) {
+  if (name === "schedule") void SummaryInstructions.refreshProvider();
   window.MeetingView?.close();
   $("panel-meeting").hidden = true;
   if (location.hash.startsWith("#meeting/")) history.pushState(null, "", location.pathname + location.search);
@@ -314,6 +315,7 @@ function editSchedule(rule) {
   $("schedule-time").value = rule?.time || "10:00";
   $("schedule-zone").value = rule?.timeZone || "Europe/Moscow";
   $("schedule-mode").value = rule?.recordingMode || $("recordingMode").value || "video";
+  SummaryInstructions.reset(rule?.summaryPrompt || "");
   for (const input of document.querySelectorAll('input[name="weekday"]')) {
     input.checked = (rule?.weekdays || []).includes(Number(input.value));
   }
@@ -327,6 +329,7 @@ function closeScheduleEditor() {
   $("schedule-form").hidden = true;
   $("add-schedule").hidden = false;
   $("schedule-form").reset();
+  SummaryInstructions.reset();
 }
 async function changeSchedule(rule, method, body) {
   if (scheduleBusy) return;
@@ -370,7 +373,10 @@ function renderSchedules() {
     const bot = document.createElement("p");
     bot.className = "muted";
     bot.textContent = "Bot: " + (rule.botName ?? "Engineering Assistant");
-    card.append(title, badge, summary, bot, next);
+    const instructions = document.createElement("p");
+    instructions.className = "muted";
+    instructions.textContent = "Summary: " + (rule.summaryPrompt?.trim() ? "Custom instructions" : "Default instructions");
+    card.append(title, badge, summary, bot, next, instructions);
     if (rule.lastRun) {
       const result = document.createElement("p");
       const statuses = { starting: "Starting", started: "Started", skipped: "Skipped", failed: "Failed to start" };
@@ -405,6 +411,12 @@ function renderSchedules() {
     $("schedules").append(card);
   }
 }
+document.querySelector(".summary-settings-link").addEventListener("click", event => {
+  if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+  event.preventDefault();
+  switchTab("settings");
+  $("tab-settings").focus();
+});
 $("add-schedule").addEventListener("click", () => editSchedule());
 $("cancel-schedule").addEventListener("click", closeScheduleEditor);
 $("schedule-form").addEventListener("submit", async event => {
@@ -417,6 +429,7 @@ $("schedule-form").addEventListener("submit", async event => {
     botName: $("schedule-bot").value,
     weekdays, time: $("schedule-time").value, timeZone: $("schedule-zone").value,
     recordingMode: $("schedule-mode").value,
+    summaryPrompt: $("schedule-prompt").value,
   };
   const id = editingScheduleId;
   scheduleBusy = true;

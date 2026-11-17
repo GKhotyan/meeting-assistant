@@ -6,6 +6,7 @@
 <title>Meeting Assistant</title>
 <link rel="stylesheet" href="/style.css" />
 <script defer src="/meeting.js"></script>
+<script defer src="/schedule-summary.js"></script>
 <script defer src="/app.js"></script>
 <script defer src="/ai-settings.js"></script>
 </head>
@@ -83,7 +84,21 @@
               </label>
             </div>
             <label>Recording mode<select id="schedule-mode"><option value="video">Full video</option><option value="screenshots">Screenshots every 15 seconds</option><option value="audio">Audio only</option></select></label>
-            <p class="muted">Uses the bot name from your current settings. Missed launches are skipped after one minute; they are never queued for later.</p>
+            <p class="muted">Missed launches are skipped after one minute; they are never queued for later.</p>
+            <details id="schedule-summary" class="summary-instructions">
+              <summary>Summary instructions <span id="schedule-summary-state" class="instruction-state">Default instructions</span></summary>
+              <div class="summary-instructions-body">
+                <p id="schedule-ai-provider" class="muted">Uses the provider and model saved in AI settings.</p>
+                <a class="summary-settings-link" href="#settings">Manage AI settings</a>
+                <label for="schedule-prompt">Summary prompt</label>
+                <p id="schedule-prompt-help" class="muted">Describe what the summary should focus on, its structure, and output language. Leave empty to use the default instructions.</p>
+                <textarea id="schedule-prompt" rows="10" maxlength="8000" aria-describedby="schedule-prompt-help schedule-prompt-count" placeholder="For example: Summarize decisions, action items, owners, and open questions."></textarea>
+                <p id="schedule-prompt-count" class="prompt-count">0 / 8,000 characters</p>
+                <div class="actions"><button id="schedule-prompt-example" type="button" class="secondary">Insert example</button><button id="schedule-prompt-expand" type="button" class="secondary">Expand editor</button></div>
+                <p class="muted">Instructions are saved for future summary generation. Saving does not send meeting content to an AI provider. Changes apply to future recordings.</p>
+                <p id="schedule-prompt-feedback" role="status" aria-live="polite"></p>
+              </div>
+            </details>
             <div class="actions"><button id="save-schedule" type="submit">Save meeting</button><button id="cancel-schedule" type="button" class="secondary">Cancel</button></div>
           </form>
           <div id="schedules"></div>
@@ -126,6 +141,13 @@
   </section>
   <footer><span id="connection">Connecting…</span><span>Meeting Assistant <span aria-hidden="true">·</span> Your conversations, on your terms.</span></footer>
 </main>
+<dialog id="summary-prompt-dialog" class="prompt-dialog" aria-labelledby="summary-prompt-title">
+  <div class="prompt-dialog-heading"><h2 id="summary-prompt-title">Summary instructions</h2><p class="muted">Edit instructions for this recurring meeting. Use instructions applies this draft to the meeting form.</p></div>
+  <label for="expanded-summary-prompt">Summary prompt</label>
+  <textarea id="expanded-summary-prompt" rows="16" maxlength="8000" aria-describedby="expanded-prompt-count"></textarea>
+  <p id="expanded-prompt-count" class="prompt-count">0 / 8,000 characters</p>
+  <div class="actions"><button id="apply-summary-prompt" type="button">Use instructions</button><button id="cancel-summary-prompt" type="button" class="secondary">Cancel</button></div>
+</dialog>
 <dialog id="record-dialog" aria-labelledby="record-title"><div class="drawer-heading"><div><span class="eyebrow">NEW MEETING</span><h2 id="record-title">Record a meeting</h2></div><button type="button" id="close-record" class="icon-button" aria-label="Close recording panel">×</button></div><p class="muted drawer-intro">Invite your assistant. Stay in the conversation.</p>
         <p id="record-notice" role="status" aria-live="polite" hidden></p>
         <form id="join">

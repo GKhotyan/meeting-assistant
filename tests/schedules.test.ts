@@ -162,3 +162,30 @@ test("old schedules without a bot name load with Engineering Assistant", async (
   await restored.tick();
   assert.equal(a.calls[0].botName, "Engineering Assistant");
 });
+
+test('schedule summary prompts persist unchanged, validate limits and only affect future launches', async () => {
+ const a=setup();
+ const prompt='  Итоги встречи\nDecisions and action items <team>  ';
+ const created=a.scheduler.create({...rule,summaryPrompt:prompt});
+ assert.equal(created.summaryPrompt,prompt);
+ const restored=new Scheduler(a.root,a.controller,a.now);
+ assert.equal(restored.list()[0].summaryPrompt,prompt);
+ for(const summaryPrompt of [null,42,{},'x'.repeat(8001)])assert.throws(()=>restored.update(created.id,{summaryPrompt} as any),(e:any)=>e.status===400);
+ assert.equal(restored.list()[0].summaryPrompt,prompt);
+ a.setTime('2026-10-26T07:00:10Z');await restored.tick();
+ assert.equal(a.calls[0].summaryPrompt,prompt);
+ restored.update(created.id,{summaryPrompt:'Updated instructions'});
+ assert.equal(a.calls[0].summaryPrompt,prompt);
+ a.setTime('2026-10-27T07:00:10Z');await restored.tick();
+ assert.equal(a.calls[1].summaryPrompt,'Updated instructions');
+ restored.update(created.id,{summaryPrompt:'  \n '});
+ assert.equal(restored.list()[0].summaryPrompt,'');
+});
+test('old schedules without summary instructions use the default path', async () => {
+ const a=setup();a.scheduler.create(rule);
+ const rows=JSON.parse(readFileSync(join(a.root,'schedules.json'),'utf8'));delete rows[0].summaryPrompt;
+ writeFileSync(join(a.root,'schedules.json'),JSON.stringify(rows));
+ const restored=new Scheduler(a.root,a.controller,a.now);
+ assert.equal(restored.list()[0].summaryPrompt,'');
+ a.setTime('2026-10-26T07:00:10Z');await restored.tick();assert.equal(a.calls[0].summaryPrompt,'');
+});

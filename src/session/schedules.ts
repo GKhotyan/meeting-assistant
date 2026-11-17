@@ -1,12 +1,14 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
+import { summaryPrompt } from "./summary-prompt";
 import { validateInput } from "./controller";
 import type { Controller } from "./controller";
 import { AppError, type RecordingMode } from "./types";
 
 export interface ScheduleInput {
   botName?: string;
+  summaryPrompt?: string;
   name: string;
   meetingUrl: string;
   weekdays: number[]; // ISO weekdays: Monday=1, Sunday=7
@@ -17,6 +19,7 @@ export interface ScheduleInput {
 }
 export interface Schedule extends ScheduleInput {
   botName: string;
+  summaryPrompt: string;
   id: string;
   enabled: boolean;
   nextRunAt?: string;
@@ -64,7 +67,7 @@ export function nextOccurrence(
   throw Error("Could not calculate the next weekly occurrence");
 }
 
-function validate(value: ScheduleInput): ScheduleInput & { enabled: boolean; botName: string } {
+function validate(value: ScheduleInput): ScheduleInput & { enabled: boolean; botName: string; summaryPrompt: string } {
   if (typeof value?.name !== "string" || !value.name.trim() || value.name.trim().length > 100)
     throw new AppError(400, "Meeting name must contain 1 to 100 characters");
   if (!Array.isArray(value.weekdays) || !value.weekdays.length || value.weekdays.length > 7 ||
@@ -81,6 +84,7 @@ function validate(value: ScheduleInput): ScheduleInput & { enabled: boolean; bot
     throw new AppError(400, "Enabled must be true or false");
   const input = validateInput({ meetingUrl: value.meetingUrl, recordingMode: value.recordingMode, botName: value.botName === undefined ? "Engineering Assistant" : value.botName });
   return {
+    summaryPrompt: summaryPrompt(value.summaryPrompt),
     name: value.name.trim(), meetingUrl: input.meetingUrl, botName: input.botName,
     weekdays: [...new Set(value.weekdays)].sort((a, b) => a - b),
     time: value.time, timeZone, recordingMode: input.recordingMode!, enabled: value.enabled ?? true,
@@ -170,7 +174,7 @@ export class Scheduler {
       if (missed) continue;
       try {
         const session = await this.controller.startSession({ meetingUrl: rule.meetingUrl,
-          meetingName: rule.name, botName: rule.botName, recordingMode: rule.recordingMode });
+          meetingName: rule.name, botName: rule.botName, recordingMode: rule.recordingMode, summaryPrompt: rule.summaryPrompt });
         rule.lastRun.status = "started";
         rule.lastRun.sessionId = session.id;
       } catch (e) {

@@ -12,6 +12,7 @@ import type { Scheduler } from "../session/schedules";
 import { DeepgramSettings, checkDeepgram, cleanKey } from "../integrations/deepgram";
 import { AISettings, aiProvider, checkAI } from "../integrations/ai";
 import { Transcriptions } from "../transcription/service";
+import { DEFAULT_SUMMARY_PROMPT, SUMMARY_PROMPT_LIMIT } from "../session/summary-prompt";
 import { openReadyFile } from "../recordings/access";
 const hash = (s: string) => createHash("sha256").update(s).digest();
 export function createApp(
@@ -85,7 +86,7 @@ export function createApp(
         const chunks: Buffer[] = [];
         for await (const chunk of req) {
           bytes += chunk.length;
-          if (bytes > 16384) throw new AppError(413, "Request body is too large");
+          if (bytes > (path === "/api/schedules" || /^\/api\/schedules\/[a-zA-Z0-9-]+$/.test(path) ? 65536 : 16384)) throw new AppError(413, "Request body is too large");
           chunks.push(chunk);
         }
         try {
@@ -94,6 +95,10 @@ export function createApp(
           throw new AppError(400, "Invalid JSON");
         }
       };
+      if (path === "/api/summary-instructions" && req.method === "GET") {
+        json(200, { defaultPrompt: DEFAULT_SUMMARY_PROMPT, maxLength: SUMMARY_PROMPT_LIMIT });
+        return;
+      }
       if (path === "/api/schedules" && options.scheduler) {
         if (req.method === "GET") json(200, { schedules: options.scheduler.list() });
         else if (req.method === "POST") json(201, options.scheduler.create(await body()));
@@ -228,6 +233,7 @@ export function createApp(
       const assets: Record<string, string> = {
         "/": "index.html",
         "/app.js": "app.js",
+        "/schedule-summary.js": "schedule-summary.js",
         "/ai-settings.js": "ai-settings.js",
         "/meeting.js": "meeting.js",
         "/style.css": "style.css",

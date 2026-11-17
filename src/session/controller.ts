@@ -11,6 +11,7 @@ import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { EventEmitter } from "node:events";
 import { Session, Status, StartInput, AppError, terminal, RecordingMode, ConnectionAttempt } from "./types";
+import { summaryPrompt, DEFAULT_SUMMARY_PROMPT } from "./summary-prompt";
 import { redact } from "./security";
 export interface Worker extends EventEmitter {
   send(message: unknown): unknown;
@@ -51,7 +52,7 @@ export function validateInput(input: StartInput): StartInput {
       400,
       "Use a standard HTTPS meeting link on zoom.us",
     );
-  return { meetingUrl: url.href, botName: input.botName.trim(), meetingName: meetingName.trim(), recordingMode: recordingMode(input.recordingMode) };
+  return { meetingUrl: url.href, botName: input.botName.trim(), meetingName: meetingName.trim(), recordingMode: recordingMode(input.recordingMode), summaryPrompt: summaryPrompt(input.summaryPrompt) };
 }
 function folderPrefix(name: string) {
   const safe = name.normalize("NFKC").replace(/[^\p{L}\p{M}\p{N}_-]+/gu, "_").replace(/^_+|_+$/g, "") || "Meeting";
@@ -172,6 +173,8 @@ export class Controller {
     const s: Session = {
       id: randomUUID(),
       meetingName: input.meetingName!,
+      summaryPrompt: input.summaryPrompt || DEFAULT_SUMMARY_PROMPT,
+      summaryPromptSource: input.summaryPrompt ? "custom" : "default",
       botName: input.botName,
       recordingMode: input.recordingMode,
       createdAt: new Date().toISOString(),

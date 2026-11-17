@@ -413,3 +413,18 @@ test('AI settings browser script is served by the real HTTP application', async 
   assert.match(await response.text(),/\/api\/settings\/ai/);
  }finally{await a.close();}
 });
+test('schedule API stores full-length Unicode summary prompts and validates updates', async () => {
+ const a=await app();
+ const headers={'Content-Type':'application/json'};
+ const input={name:'Daily',meetingUrl:'https://zoom.us/j/12345678901',weekdays:[1],time:'10:00',timeZone:'Europe/Moscow',recordingMode:'audio',summaryPrompt:'я'.repeat(8000)};
+ try {
+  const response=await fetch(a.base+'/api/schedules',{method:'POST',headers,body:JSON.stringify(input)});
+  assert.equal(response.status,201);const created=await response.json();assert.equal(created.summaryPrompt,input.summaryPrompt);
+  const updated=await fetch(a.base+'/api/schedules/'+created.id,{method:'PUT',headers,body:JSON.stringify({summaryPrompt:'x'.repeat(8001)})});
+  assert.equal(updated.status,400);
+  assert.equal((await (await fetch(a.base+'/api/schedules')).json()).schedules[0].summaryPrompt,input.summaryPrompt);
+  const defaults=await (await fetch(a.base+'/api/summary-instructions')).json();
+  assert.equal(defaults.maxLength,8000);assert.match(defaults.defaultPrompt,/Action items/);
+  const script=await fetch(a.base+'/schedule-summary.js');assert.equal(script.status,200);assert.match(script.headers.get('content-type')||'',/javascript/);
+ } finally {await a.close();}
+});

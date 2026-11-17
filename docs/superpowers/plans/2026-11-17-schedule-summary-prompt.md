@@ -1,0 +1,7 @@
+# Schedule summary prompt plan
+
+1. Write failing schedule/controller tests for persistence, validation, old schedules, launch snapshots, and independence from later edits. Add shared default prompt/validation; persist schedule prompt and immutable session snapshot.
+2. Extend the real-server browser schedule test before UI work. Add the collapsed editor, example insertion, counter, expanded modal draft, selected AI configuration display, and card status. Test create/edit/cancel, replacement confirmation, polling, modal Escape/focus, Unicode, and mobile.
+3. Document the settings-only behavior and snapshot semantics. Run full tests/build and real-server browser regressions. Request independent review, resolve findings, commit/push the existing feature branch without merging main.
+
+Validation: 122 application tests and the production build passed. Real-server Schedule browser coverage passed for create/edit/cancel, Unicode prompt persistence, example replacement confirmation, modal Apply/Escape/focus, polling, launch snapshots, old-recording independence, two consecutive settings round trips, provider refresh, and mobile layout. AI settings, Deepgram, transcription and workspace browser regressions also passed. Desktop/mobile modal screenshots were visually inspected. Independent review found a repeated settings-link navigation issue; it was reproduced, fixed, and verified with a regression. Final review found no remaining blocking issue. No provider generation requests were made.

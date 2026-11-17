@@ -254,3 +254,19 @@ for (const event of ["exit", "error"]) test(`worker ${event} finalizes an unfini
   const restored = new Controller(root, () => { throw Error("must not rejoin"); });
   assert.equal(restored.getSession(s.id)?.attempts?.[0].outcome, "failed");
 });
+
+test('recordings persist resolved summary instructions without changing previous snapshots', async () => {
+ const {c,root}=setup();
+ const prompt='  Summary\nРешения и следующие шаги  ';
+ const first=await c.startSession({...input,summaryPrompt:prompt});
+ const snapshot=JSON.parse(readFileSync(join(c.getSessionDirectory(first.id),'session.json'),'utf8'));
+ assert.equal(snapshot.summaryPrompt,prompt);assert.equal(snapshot.summaryPromptSource,'custom');
+ await c.stopSession(first.id);
+ const second=await c.startSession({...input,summaryPrompt:''});
+ const defaultSnapshot=JSON.parse(readFileSync(join(c.getSessionDirectory(second.id),'session.json'),'utf8'));
+ assert.equal(defaultSnapshot.summaryPromptSource,'default');assert.match(defaultSnapshot.summaryPrompt,/Action items/);
+ assert.equal(c.getSession(first.id)?.summaryPrompt,prompt);
+ const restored=new Controller(root,()=>{throw Error('no worker expected')});
+ assert.equal(restored.getSession(first.id)?.summaryPrompt,prompt);
+ await c.stopSession(second.id);
+});

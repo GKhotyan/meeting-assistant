@@ -29,6 +29,8 @@ export interface ConnectionAttempt {
 export interface Session {
   id: string;
   meetingName: string;
+  summaryPrompt?: string;
+  summaryPromptSource?: "default" | "custom";
   botName: string;
   recordingMode?: RecordingMode;
   createdAt: string;
@@ -42,6 +44,7 @@ export interface Session {
 export interface StartInput {
   meetingUrl: string;
   meetingName?: string;
+  summaryPrompt?: string;
   botName: string;
   recordingMode?: RecordingMode;
 }

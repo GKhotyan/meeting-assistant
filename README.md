@@ -73,6 +73,10 @@ Each rule saves its own bot name, which can be changed when editing the meeting 
 
 The list shows the bot name, next launch, and most recent attempt. The service checks every ten seconds and launches within the scheduled minute. If another meeting is still active, the new occurrence is skipped rather than queued. Launches missed by a minute or more while the host was asleep or the service was stopped are skipped too. The service and Docker must stay running, but the browser page can be closed.
 
+Each recurring meeting has an optional **Summary instructions** section. Enter a **Summary prompt** in any language, use **Insert example** for a starting point, or open **Expand editor** for longer instructions. Empty text uses the default instructions; custom prompts support up to 8,000 characters. **Save meeting** saves the prompt with the schedule, while **Cancel** discards changes. The expanded editor keeps its own draft: **Use instructions** applies it to the meeting form; Cancel or Escape leaves the form unchanged. The section shows the currently saved AI provider and model, with a link to AI settings.
+
+At recording launch, the application copies the resolved instructions into `session.json` as `summaryPrompt`, with `summaryPromptSource` set to `default` or `custom`. Editing a schedule affects future recordings; earlier recordings retain their original instructions. Existing recordings without this metadata are left unchanged. This currently stores instructions for future summary generation; scheduling and saving prompts do not send content to OpenAI or z.ai or generate summaries.
+
 Rules and launch claims live in `data/schedules.json` and survive container recreation. Time zones are independent of the container's clock zone. Nonexistent times during daylight-saving transitions are skipped; repeated local times run once.
 
 ## Deepgram settings
