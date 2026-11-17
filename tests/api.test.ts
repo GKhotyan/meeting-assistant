@@ -7,7 +7,7 @@ import { EventEmitter } from "node:events";
 import { Controller } from "../src/session/controller";
 import { createApp } from "../src/server/app";
 import { Scheduler } from "../src/session/schedules";
-async function app(password?: string, existingRoot?: string, publicOrigin?: string, deepgramFetch?: typeof fetch) {
+async function app(password?: string, existingRoot?: string, publicOrigin?: string, deepgramFetch?: typeof fetch, aiFetch?: typeof fetch) {
   const root = existingRoot ?? mkdtempSync(join(tmpdir(), "ea-api-"));
   const workers: any[] = [];
   const c = new Controller(root, () => {
@@ -21,6 +21,7 @@ async function app(password?: string, existingRoot?: string, publicOrigin?: stri
     password,
     publicOrigin,
     deepgramFetch,
+    aiFetch,
     publicDir: join(process.cwd(), "public"),
     scheduler: new Scheduler(root, c),
   });
@@ -367,4 +368,48 @@ test('transcription endpoints require authentication',async()=>{
   const a=await app('secret');
   try {for(const method of ['GET','POST'])assert.equal((await fetch(a.base+'/api/sessions/test/transcription',{method,headers:{'Content-Type':'application/json'}})).status,401);}
   finally {await a.close();}
+});
+
+test("AI settings API preserves provider credentials, checks drafts and removes only selected keys", async () => {
+  const checked: string[] = [];
+  const transport: typeof fetch = async (_url, options) => {
+    checked.push((options?.headers as Record<string,string>).Authorization);
+    return Response.json({data:[{id:'fixture-model'}]});
+  };
+  const a=await app(undefined,undefined,undefined,undefined,transport);
+  const send=(method: string, value: unknown, suffix='')=>fetch(a.base+'/api/settings/ai'+suffix,{method,headers:{'Content-Type':'application/json'},body:JSON.stringify(value)});
+  try {
+    assert.equal((await fetch(a.base+'/api/settings/ai')).status,200);
+    assert.equal((await send('POST',{provider:'openai'},'/check')).status,400);
+    const saved=await send('PUT',{provider:'openai',model:'gpt-4.1',effort:'default',apiKey:'saved-secret'});
+    assert.equal(saved.status,200);
+    assert.equal(JSON.stringify(await saved.json()).includes('saved-secret'),false);
+    assert.equal((await (await send('POST',{provider:'openai',apiKey:'draft-secret'},'/check')).json()).valid,true);
+    assert.equal((await (await send('POST',{provider:'openai'},'/check')).json()).valid,true);
+    assert.deepEqual(checked,['Bearer draft-secret','Bearer saved-secret']);
+    for(const invalid of [null,[],{provider:'other'},{provider:'openai',apiKey:42},{provider:'openai',apiKey:'bad\nkey'}])assert.equal((await send('POST',invalid,'/check')).status,400);
+    assert.equal((await send('PUT',{provider:'zai',model:'glm-4.7',apiKey:'zai-secret'})).status,200);
+    const removed=await (await send('DELETE',{provider:'openai'})).json();
+    assert.equal(removed.providers.openai.configured,false);assert.equal(removed.providers.zai.configured,true);
+    assert.equal((await send('PATCH',{})).status,405);
+  } finally {await a.close();}
+});
+test("AI settings routes require authentication and reject cross-site changes", async () => {
+ const a=await app('secret');
+ try {
+  for(const [method,suffix] of [['GET',''],['PUT',''],['DELETE',''],['POST','/check']]){
+   const url=a.base+'/api/settings/ai'+suffix;
+   assert.equal((await fetch(url,{method,headers:{'Content-Type':'application/json'}})).status,401);
+   if(method!=='GET')assert.equal((await fetch(url,{method,headers:{'Content-Type':'application/json',Origin:'https://evil.test',Authorization:'Basic '+Buffer.from('assistant:secret').toString('base64')},body:'{}'})).status,403);
+  }
+ } finally {await a.close();}
+});
+test('AI settings browser script is served by the real HTTP application', async () => {
+ const a=await app();
+ try {
+  const response=await fetch(a.base+'/ai-settings.js');
+  assert.equal(response.status,200);
+  assert.match(response.headers.get('content-type')||'',/javascript/);
+  assert.match(await response.text(),/\/api\/settings\/ai/);
+ }finally{await a.close();}
 });

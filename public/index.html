@@ -7,6 +7,7 @@
 <link rel="stylesheet" href="/style.css" />
 <script defer src="/meeting.js"></script>
 <script defer src="/app.js"></script>
+<script defer src="/ai-settings.js"></script>
 </head>
 <body>
 <a class="skip-link" href="#page-title">Skip to content</a>
@@ -100,6 +101,27 @@
       <p id="deepgram-help" class="muted">Keys are encrypted on this server. Leave the field empty to check the saved key. Checking a new key does not save it or send recordings.</p>
       <div class="actions"><button id="deepgram-save" type="submit" disabled>Save key</button><button id="deepgram-check" class="secondary" type="button" disabled>Check connection</button><button id="deepgram-remove" class="secondary" type="button" disabled>Remove key</button></div>
       <p id="deepgram-feedback" role="status" aria-live="polite"></p>
+    </form>
+    <form id="ai-form" class="settings-form integration-settings" aria-labelledby="ai-title">
+      <h2 id="ai-title">AI models</h2>
+      <p class="muted">Configure OpenAI or z.ai for future meeting analysis. Summary generation is not available yet.</p>
+      <p id="ai-active" class="muted" role="status">Loading AI settings…</p>
+      <label for="ai-provider">AI provider</label>
+      <select id="ai-provider" disabled><option value="zai">z.ai</option><option value="openai">OpenAI</option></select>
+      <p id="ai-status" class="muted" role="status"></p>
+      <label for="ai-key">AI API key</label>
+      <div class="key-entry"><input id="ai-key" type="password" maxlength="512" autocomplete="off" spellcheck="false" autocapitalize="none" aria-describedby="ai-key-help" disabled /><button id="ai-toggle" class="secondary" type="button" aria-controls="ai-key" aria-pressed="false" disabled>Show key</button></div>
+      <p id="ai-key-help" class="muted">Keys are encrypted on this server and stored separately for each provider. Leave this field empty to keep the saved key. Checking a key does not save settings or send meeting content.</p>
+      <label for="ai-model">Model ID</label>
+      <input id="ai-model" list="ai-models" maxlength="128" required autocomplete="off" spellcheck="false" aria-describedby="ai-model-help" disabled />
+      <datalist id="ai-models"></datalist>
+      <p id="ai-model-help" class="muted">Choose a suggested model or enter its exact API ID. Availability depends on your provider account.</p>
+      <label for="ai-effort">Reasoning effort</label>
+      <select id="ai-effort" disabled></select>
+      <p class="muted">Saved as a preference for future analysis. Support depends on the model; use Model default if unsure. No generation request is made.</p>
+      <div class="actions"><button id="ai-save" type="submit" disabled>Save AI settings</button><button id="ai-check" class="secondary" type="button" disabled>Check connection</button><button id="ai-remove" class="secondary" type="button" disabled>Remove key</button><button id="ai-reload" class="secondary" type="button" hidden>Retry loading</button></div>
+      <p id="ai-feedback" role="status" aria-live="polite"></p>
+      <p class="muted"><a id="ai-key-link" href="https://z.ai/manage-apikey/apikey-list" target="_blank" rel="noopener noreferrer">Get an API key</a></p>
     </form>
   </section>
   <footer><span id="connection">Connecting…</span><span>Meeting Assistant <span aria-hidden="true">·</span> Your conversations, on your terms.</span></footer>

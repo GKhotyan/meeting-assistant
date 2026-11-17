@@ -974,3 +974,6 @@ footer {
 
 .meeting-title { display:inline-block; max-width:75%; overflow-wrap:anywhere; }
 .timestamp:hover { color:#fff; }
+
+#ai-key-link { color:var(--accent); text-decoration:none; }
+#ai-key-link:hover { text-decoration:underline; }

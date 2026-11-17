@@ -3,14 +3,14 @@ import { chmodSync, existsSync, lstatSync, mkdirSync, readFileSync, renameSync, 
 import { join } from "node:path";
 import { AppError } from "../session/types";
 
-function cleanKey(value: unknown): string {
+export function cleanKey(value: unknown): string {
   if (typeof value !== "string" || value.length > 512 || /[^\x20-\x7e]/.test(value) || !value.trim())
     throw new AppError(400, "Enter an API key containing up to 512 printable ASCII characters.");
   return value.trim();
 }
 
 /** Credentials stay server-side and separate from recording preferences. */
-export class DeepgramSettings {
+export class CredentialStore {
   private directory: string;
   private secrets: string;
   private file: string;
@@ -47,9 +47,9 @@ export class DeepgramSettings {
       throw new AppError(409, "Credential encryption key is missing or damaged. Restore secrets/master.key from backup.");
     }
   }
-  key(): string {
+  read(): Record<string, unknown> {
     this.guard();
-    if (!existsSync(this.file)) return "";
+    if (!existsSync(this.file)) return {};
     const key = this.masterKey(false);
     try {
       chmodSync(this.directory, 0o700);
@@ -61,24 +61,37 @@ export class DeepgramSettings {
       const decipher = createDecipheriv("aes-256-gcm", key, iv);
       decipher.setAuthTag(tag);
       const value = JSON.parse(Buffer.concat([decipher.update(Buffer.from(data.ciphertext, "base64")), decipher.final()]).toString("utf8"));
-      return value.deepgram === "" ? "" : cleanKey(value.deepgram);
+      if (!value || typeof value !== "object" || Array.isArray(value)) throw Error();
+      return value;
     } catch {
       throw new AppError(409, "Cannot decrypt credentials. Restore settings/api-keys.json and secrets/master.key from backup.");
     }
   }
-  metadata() { return { configured: !!this.key() }; }
-  private write(apiKey: string) {
+  write(value: Record<string, unknown>) {
     this.guard();
     // Read before replacing: a missing master key must never silently reset credentials.
-    if (existsSync(this.file)) this.key();
+    if (existsSync(this.file)) this.read();
     const key = this.masterKey(!existsSync(this.file));
     mkdirSync(this.directory, { recursive: true, mode: 0o700 });
     chmodSync(this.directory, 0o700);
     const iv = randomBytes(12), cipher = createCipheriv("aes-256-gcm", key, iv);
-    const ciphertext = Buffer.concat([cipher.update(JSON.stringify({ deepgram: apiKey })), cipher.final()]);
+    const ciphertext = Buffer.concat([cipher.update(JSON.stringify(value)), cipher.final()]);
     const temporary = join(this.directory, randomBytes(16).toString("hex") + ".tmp");
     writeFileSync(temporary, JSON.stringify({ version: 1, iv: iv.toString("base64"), tag: cipher.getAuthTag().toString("base64"), ciphertext: ciphertext.toString("base64") }), { mode: 0o600, flag: "wx" });
     renameSync(temporary, this.file);
+  }
+}
+
+export class DeepgramSettings {
+  private store: CredentialStore;
+  constructor(root: string) { this.store = new CredentialStore(root); }
+  key(): string {
+    const value = this.store.read().deepgram;
+    return value === undefined || value === "" ? "" : cleanKey(value);
+  }
+  metadata() { return { configured: !!this.key() }; }
+  private write(apiKey: string) {
+    this.store.write({ ...this.store.read(), deepgram: apiKey });
     return this.metadata();
   }
   save(apiKey: unknown) { return this.write(cleanKey(apiKey)); }

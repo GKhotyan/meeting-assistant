@@ -81,6 +81,18 @@ Open **Settings → Deepgram** to enter, show/hide, save, check or remove an API
 
 Credentials are encrypted with AES-256-GCM in `data/settings/api-keys.json`; the encryption key is stored separately in `data/secrets/master.key`. Directories use permissions `0700`, files `0600`. Both survive Docker container recreation in the existing `/data` volume and are excluded from Git and the Docker build context. If using `ASSISTANT_DATA_DIR` (or `DATA_DIR` outside Docker), these paths are relative to that directory. Back up both files together and protect the backup: access to both allows decryption. A missing or damaged master key must be restored from backup; it is never silently replaced while encrypted credentials exist. Saved API keys are never returned to the browser.
 
+## AI provider settings
+
+Open **Settings → AI models** to select **OpenAI** or **z.ai**, enter an API key, and save a model ID and reasoning effort preference. Each provider retains its own configuration and key when you switch. **Save AI settings** applies the provider selection; an empty key field preserves that provider's saved key. **Remove key** removes only the displayed provider's key and keeps its model preferences.
+
+Suggested model IDs are starting points, not a complete catalogue or a guarantee of account access. You can enter an exact API model ID. Reasoning effort is a stored preference for future analysis; support depends on the model. Choose **Model default** if unsure.
+
+**Check connection** checks the entered key without saving it, or uses the saved key when the field is empty. The server requests the provider's model list with a 10-second timeout and sends no meeting content. This does not test generation, selected-model capabilities, permissions for generation, or available balance. Provider references: [OpenAI models API](https://developers.openai.com/api/reference/resources/models/methods/list), [z.ai API and authentication](https://docs.z.ai/api-reference/introduction). z.ai uses its general API endpoint; GLM Coding Plan endpoints are not configured here.
+
+AI keys and preferences use the same encrypted `data/settings/api-keys.json` storage and `data/secrets/master.key` as Deepgram. Existing Deepgram credentials remain compatible. Keys are never returned to the browser; back up both files together as described above.
+
+This integration currently covers configuration and connection checks only. Meeting analysis and summary generation are not implemented; saving a provider or opening a meeting does not invoke a model.
+
 ## Meeting transcripts
 
 Click a meeting title or the free area of its card to open **Recording / Transcription**. The card's transcript status opens Transcription directly. Existing download and delete buttons keep their own actions; browser Back and meeting links work.

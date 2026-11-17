@@ -9,14 +9,16 @@ import { createHash, timingSafeEqual } from "node:crypto";
 import { Controller } from "../session/controller";
 import { AppError } from "../session/types";
 import type { Scheduler } from "../session/schedules";
-import { DeepgramSettings, checkDeepgram } from "../integrations/deepgram";
+import { DeepgramSettings, checkDeepgram, cleanKey } from "../integrations/deepgram";
+import { AISettings, aiProvider, checkAI } from "../integrations/ai";
 import { Transcriptions } from "../transcription/service";
 import { openReadyFile } from "../recordings/access";
 const hash = (s: string) => createHash("sha256").update(s).digest();
 export function createApp(
   controller: Controller,
-  options: { password?: string; publicDir: string; scheduler?: Scheduler; publicOrigin?: string; deepgramFetch?: typeof fetch },
+  options: { password?: string; publicDir: string; scheduler?: Scheduler; publicOrigin?: string; deepgramFetch?: typeof fetch; aiFetch?: typeof fetch },
 ) {
+  const ai = new AISettings(controller.root);
   const deepgram = new DeepgramSettings(controller.root);
   const transcriptions = new Transcriptions(controller, deepgram, options.deepgramFetch);
   const publicUrl = options.publicOrigin ? new URL(options.publicOrigin) : undefined;
@@ -105,6 +107,24 @@ export function createApp(
           options.scheduler.delete(schedule[1]);
           json(200, { status: "deleted" });
         } else throw new AppError(405, "Method not allowed");
+        return;
+      }
+      if (path === "/api/settings/ai/check" && req.method === "POST") {
+        const value = await body();
+        if (!value || typeof value !== "object" || Array.isArray(value))
+          throw new AppError(400, "Invalid AI settings.");
+        const provider = aiProvider(value.provider);
+        if (value.apiKey !== undefined && value.apiKey !== "") cleanKey(value.apiKey);
+        const key = value.apiKey || ai.key(provider);
+        if (!key) throw new AppError(400, "Enter or save an API key for this provider first.");
+        json(200, await checkAI(provider, key, options.aiFetch));
+        return;
+      }
+      if (path === "/api/settings/ai") {
+        if (req.method === "GET") json(200, ai.metadata());
+        else if (req.method === "PUT") json(200, ai.save(await body()));
+        else if (req.method === "DELETE") json(200, ai.remove(aiProvider((await body())?.provider)));
+        else throw new AppError(405, "Method not allowed");
         return;
       }
       if (path === "/api/settings/deepgram/check" && req.method === "POST") {
@@ -208,6 +228,7 @@ export function createApp(
       const assets: Record<string, string> = {
         "/": "index.html",
         "/app.js": "app.js",
+        "/ai-settings.js": "ai-settings.js",
         "/meeting.js": "meeting.js",
         "/style.css": "style.css",
       };
