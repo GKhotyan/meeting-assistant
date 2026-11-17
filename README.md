@@ -6,7 +6,7 @@ Meeting Assistant is a self-hosted application for recording and transcribing Zo
 
 Recordings and transcripts are stored on your host. Transcription is optional: audio is sent to Deepgram only when you explicitly start processing. Recording itself requires no transcription API key.
 
-[Русский](README.ru.md) · [Validation notes](docs/validation.md) · [Third-party notices](THIRD_PARTY_NOTICES.md)
+[Validation notes](docs/validation.md) · [Third-party notices](THIRD_PARTY_NOTICES.md)
 
 ![Meeting Assistant web interface](docs/images/interface.png)
 
