@@ -1,3 +1,4 @@
+import type { ZoomConnection } from "../zoom/connection";
 import { createServer, IncomingMessage, ServerResponse } from "node:http";
 import {
   readFileSync,
@@ -15,7 +16,7 @@ import { openReadyFile } from "../recordings/access";
 const hash = (s: string) => createHash("sha256").update(s).digest();
 export function createApp(
   controller: Controller,
-  options: { password?: string; publicDir: string; scheduler?: Scheduler; publicOrigin?: string; deepgramFetch?: typeof fetch },
+  options: { zoom?: ZoomConnection; password?: string; publicDir: string; scheduler?: Scheduler; publicOrigin?: string; deepgramFetch?: typeof fetch },
 ) {
   const deepgram = new DeepgramSettings(controller.root);
   const transcriptions = new Transcriptions(controller, deepgram, options.deepgramFetch);

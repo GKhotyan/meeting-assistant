@@ -30,6 +30,8 @@ chromium.use(StealthPlugin());
 export interface LaunchPersistentOptions {
   /** Chromium profile directory owned by the caller. */
   dataDir: string;
+  display?: string;
+  viewport?: {width:number;height:number};
   /** Launch flags — getBrowserSessionArgs() (VNC) or getAuthenticatedBrowserArgs() (bot). */
   args: string[];
   /** Headed by default (Xvfb under VNC); pass true only for headless contexts. */
@@ -49,7 +51,8 @@ export async function launchPersistentBrowser(
     headless: opts.headless ?? false,
     ignoreDefaultArgs: ['--enable-automation'],
     args: opts.args,
-    viewport: null,
+    viewport: opts.viewport ?? null,
+    ...(opts.display ? {env:{...process.env, DISPLAY:opts.display}} : {}),
     locale,
   });
   // Anti-detection the stealth plugin misses under playwright-extra. Measured live (with stealth
