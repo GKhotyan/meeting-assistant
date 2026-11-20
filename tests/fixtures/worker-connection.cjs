@@ -39,7 +39,7 @@ substitute("src/worker/browser.ts", {
 });
 const { AdmissionError } = require(join(root, "vendor/vexa/join/shared/admission.ts"));
 substitute("vendor/vexa/join/zoom/join.ts", { joinZoomMeeting: async page => {
-  if (["retry", "screenshot-failure"].includes(scenario) && page.number === 1) throw new AdmissionError("denial", "zoom_requires_rtms: automated bots aren't allowed");
+  if (["retry", "screenshot-failure"].includes(scenario) && page.number === 1) throw Error("net::ERR_CONNECTION_RESET");
   if (scenario === "stop-delay") throw Error("net::ERR_CONNECTION_RESET");
   if (scenario === "crash-connect" && page.number === 1) { page.emit("crash"); return new Promise(() => {}); }
 } });

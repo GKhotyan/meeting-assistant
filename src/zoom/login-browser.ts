@@ -28,10 +28,11 @@ export async function createLoginBrowser(state?:ZoomState):Promise<LoginDriver> 
     const {context}=browser;
     if(state)await hydrateSession(context,state);
     let current=browser.page;
-    context.on('page',page=>{current=page;});
+    let probing=false;
+    context.on('page',page=>{if(!probing)current=page;});
     const page=():Page=>current.isClosed() ? context.pages().filter(p=>!p.isClosed()).at(-1)! : current;
     // Probes are not interactive pages; preserve the user's focused login page.
-    const verify=async()=>{const active=current;try{return await verifyContext(context);}finally{if(!active.isClosed())current=active;}};
+    const verify=async()=>{const active=current;probing=true;try{return await verifyContext(context);}finally{probing=false;if(!active.isClosed())current=active;}};
     let closed=false;
     return {
       async start(email,password) {

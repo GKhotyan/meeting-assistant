@@ -19,5 +19,10 @@ test("sign-in-only admission gate is authentication, not a retryable bot block",
 });
 test("actual bot warning with a sign-in option still reports the bot-block reason", async () => {
   await assert.rejects(waitForZoomMeetingAdmission(page("Automated bots aren't allowed. Sign in to join"), 0, {}),
-    (error: any) => error instanceof AdmissionError && error.outcome === "denial" && /zoom_requires_rtms/.test(error.message));
+    (error: any) => error instanceof AdmissionError && error.outcome === "denial" && /zoom_bot_blocked/.test(error.message) && !/requires.*RTMS/i.test(error.message));
+});
+test('loading meeting shell without Leave control is not admitted',async()=>{
+  const p=page('Joining Meeting…');
+  p.locator=(selector:string)=>{const l:any={first:()=>l,isVisible:async()=>selector==='.meeting-app',count:async()=>0};return l;};
+  await assert.rejects(waitForZoomMeetingAdmission(p,0,{}));
 });

@@ -86,40 +86,10 @@ async function isAdmitted(page: Page): Promise<boolean> {
     const leaveBtn = page.locator(zoomLeaveButtonSelector).first();
     if (await leaveBtn.isVisible({ timeout: 500 })) return true;
 
-    // Before the weaker fallbacks, rule out the waiting room. The
-    // waiting-room text is the most reliable disambiguator — it appears
-    // ONLY in the waiting room.
-    const inWaitingRoom = await page.evaluate((texts: string[]) => {
-      const bodyText = document.body?.innerText || '';
-      return texts.some(t => bodyText.includes(t));
-    }, zoomWaitingRoomTexts).catch(() => false);
-    if (inWaitingRoom) return false;
-
-    // Fallback 1: footer may be auto-hidden — check for the meeting app shell
-    const meetingApp = page.locator(zoomMeetingAppSelector).first();
-    if (await meetingApp.isVisible({ timeout: 500 })) return true;
-
-    // Fallback 2: live <audio> elements AND no pre-join indicators.
-    // Distinguishes "in meeting, audio routing" from "pre-join page with
-    // mic preview audio".
-    const state = await page.evaluate(() => {
-      const liveAudioCount = Array.from(document.querySelectorAll('audio'))
-        .filter((el: any) =>
-          !el.paused &&
-          el.srcObject instanceof MediaStream &&
-          el.srcObject.getAudioTracks().length > 0 &&
-          el.srcObject.getAudioTracks()[0].readyState === 'live')
-        .length;
-      const preJoinPresent = !!(
-        document.querySelector('#input-for-name') ||
-        document.querySelector('button.preview-join-button') ||
-        document.querySelector('input[placeholder*="passcode" i], input[placeholder*="password" i]')
-      );
-      const bodyText = (document.body?.innerText || '').toLowerCase();
-      const preJoinTextHints = ['enter meeting info', 'meeting passcode'].some(t => bodyText.includes(t));
-      return { liveAudioCount, preJoinPresent, preJoinTextHints };
-    }).catch(() => ({ liveAudioCount: 0, preJoinPresent: true, preJoinTextHints: true }));
-    return state.liveAudioCount > 0 && !state.preJoinPresent && !state.preJoinTextHints;
+    // A loading shell and preloaded media can exist before admission.
+    // Reveal auto-hidden controls before deciding; only Leave proves admission.
+    await page.mouse?.move(600, 700).catch(() => {});
+    return await leaveBtn.isVisible({ timeout: 500 });
   } catch {
     return false;
   }
@@ -189,12 +159,12 @@ export async function waitForZoomMeetingAdmission(
       throw new AdmissionError('auth_session_missing', '[Zoom Web] auth_required: sign in to join this meeting');
     }
     if (wall) {
-      log(`[Zoom Web] 🚫 Anti-bot wall detected (matched: "${wall}") — this meeting requires Zoom RTMS; bots cannot join via the web client. Failing fast.`);
-      await callBlockedCallback(botConfig, 'zoom_requires_rtms', { matched: wall, phase: 'pre_admission_poll' });
+      log(`[Zoom Web] 🚫 Anti-bot wall detected (matched: "${wall}") — Zoom has refused automated browser entry.`);
+      await callBlockedCallback(botConfig, 'zoom_bot_blocked', { matched: wall, phase: 'pre_admission_poll' });
       // PERMANENT platform verdict: Zoom itself refuses browser bots here — a re-spawn hits the
       // same wall. `denial` is the closest sealed outcome (a distinct `blocked` CompletionReason
       // needs lane:contract — see join-driver.ts).
-      throw new AdmissionError('denial', '[Zoom Web] zoom_requires_rtms: meeting/account blocks automated browser joins and requires Zoom RTMS (Realtime Media Streams); route to the RTMS path');
+      throw new AdmissionError('denial', '[Zoom Web] zoom_bot_blocked: Zoom refused automated browser entry. Repeated attempts will not resolve this refusal.');
     }
   }
 
@@ -233,8 +203,8 @@ export async function waitForZoomMeetingAdmission(
     }
     if (wall) {
       log(`[Zoom Web] 🚫 Anti-bot wall detected during poll (matched: "${wall}") — requires Zoom RTMS. Failing fast.`);
-      await callBlockedCallback(botConfig, 'zoom_requires_rtms', { matched: wall, phase: 'admission_poll' });
-      throw new AdmissionError('denial', '[Zoom Web] zoom_requires_rtms: meeting/account blocks automated browser joins and requires Zoom RTMS (Realtime Media Streams); route to the RTMS path');
+      await callBlockedCallback(botConfig, 'zoom_bot_blocked', { matched: wall, phase: 'admission_poll' });
+      throw new AdmissionError('denial', '[Zoom Web] zoom_bot_blocked: Zoom refused automated browser entry. Repeated attempts will not resolve this refusal.');
     }
 
     if (await isAdmitted(page)) {

@@ -5,10 +5,28 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { EventEmitter } from "node:events";
 import { Controller } from "../src/session/controller";
+import { ZoomSettings } from "../src/integrations/zoom-settings";
 const input = {
   meetingUrl: "https://zoom.us/j/12345678901?pwd=secret",
   botName: "Engineering Assistant",
 };
+test('Zoom authentication reaches workers privately and disconnect does not change their snapshot',async()=>{
+  const {c,root}=setup();
+  const z=new ZoomSettings(root);
+  const auth:any={cookies:[{name:'cred',value:'zoom-private',domain:'.zoom.us',path:'/',expires:-1,httpOnly:true,secure:true,sameSite:'Lax'}],origins:[]};
+  z.save('bot@example.com',auth);
+  let sent:any;
+  const w=new EventEmitter() as any;w.send=(m:any)=>{if(m.type==='start')sent=m;else setImmediate(()=>w.emit('exit',0));};w.kill=()=>{};
+  (c as any).spawnWorker=()=>w;
+  const session=await c.startSession(input);
+  assert.deepEqual(sent.zoomState,auth);
+  assert.equal(JSON.stringify(session).includes('zoom-private'),false);
+  assert.equal(readFileSync(join(c.getSessionDirectory(session.id),'session.json'),'utf8').includes('zoom-private'),false);
+  z.disconnect();assert.deepEqual(sent.zoomState,auth);
+  await c.stopSession(session.id);
+  z.save('bot@example.com',auth);z.markExpired();
+  await assert.rejects(()=>c.startSession(input),/sign.in required/i);
+});
 function setup() {
   const root = mkdtempSync(join(tmpdir(), "ea-test-"));
   const workers: any[] = [];

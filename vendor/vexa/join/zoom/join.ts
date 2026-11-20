@@ -1,3 +1,4 @@
+import { setPreJoinName } from "../../../../src/zoom/meeting-name";
 import { AdmissionError } from '../shared/admission';
 import { Page } from "playwright";
 import { log, callJoiningCallback } from "../_host";
@@ -272,21 +273,8 @@ export async function joinZoomMeeting(
   // Real keyboard events (focus + type) trigger Zoom's full input pipeline
   // including the validation that enables the Join button.
   if (authenticated) {
-    // Signed-in: keep the account identity. Leave any pre-filled name as-is; only type a
-    // fallback if the field is unexpectedly empty (so the Join button can still enable).
-    const nameField = page.locator(zoomNameInputSelector).first();
-    if (await nameField.isVisible({ timeout: 1500 }).catch(() => false)) {
-      const current = await nameField.inputValue().catch(() => '');
-      if (current) {
-        log(`[Zoom Web] Signed-in name pre-filled ("${current}") — using account identity`);
-      } else {
-        await nameField.click({ timeout: 5000 }).catch(() => {});
-        await page.keyboard.type(botName, { delay: 30 });
-        log(`[Zoom Web] Signed-in name field empty — typed fallback "${botName}"`);
-      }
-    } else {
-      log('[Zoom Web] No name field — signed-in client uses the account name directly');
-    }
+    const changed = await setPreJoinName(page, botName);
+    log(changed ? '[Zoom Web] Applied the requested meeting name in signed-in pre-join' : '[Zoom Web] Signed-in pre-join has no editable name field; will try in-meeting rename');
   } else {
     await page.locator(zoomNameInputSelector).first().click({ timeout: 5000 }).catch(() => {});
     await page.locator(zoomNameInputSelector).first().fill('');
