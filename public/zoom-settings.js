@@ -1,7 +1,8 @@
 (() => {
   const el=id=>document.getElementById(id), base='/api/settings/zoom';
   const dialog=el('zoom-browser'), image=el('zoom-browser-image');
-  let state, pending=false, polling=false, imageUrl, frameBusy=false, stopped=false;
+  let state, pending=false, polling=false, imageUrl, frameBusy=false, stopped=false, emailDirty=false;
+  el('zoom-email').addEventListener('input',()=>{emailDirty=true;});
   let inputQueue=Promise.resolve();
   async function request(path='',method='GET',data) {
     const r=await fetch(base+path,{method,headers:method==='GET'?{}:{'Content-Type':'application/json'},...(data!==undefined?{body:JSON.stringify(data)}:{})});
@@ -11,6 +12,7 @@
   const names={not_connected:'Not connected',connecting:'Connecting…',action_required:'Action required',connected:'Connected',sign_in_required:'Sign-in required',error:'Connection failed'};
   function render(value) {
     state=value;
+    if(!emailDirty)el('zoom-email').value=value.email || '';
     el('zoom-status').textContent=(names[value.status] || 'Unavailable')+(value.email?' · '+value.email:'');
     el('zoom-feedback').textContent=value.message || (value.status==='connected'?'Session verified. Meeting admission remains controlled by Zoom.':'');
     const active=['connecting','action_required'].includes(value.status);

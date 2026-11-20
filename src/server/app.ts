@@ -31,7 +31,7 @@ export function createApp(
       res.setHeader("Cache-Control", "no-store");
       res.setHeader(
         "Content-Security-Policy",
-        "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; media-src 'self'; frame-ancestors 'none'",
+        "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; media-src 'self'; frame-ancestors 'none'",
       );
       const url = new URL(req.url || "/", "http://localhost");
       const path = url.pathname;

@@ -31,7 +31,7 @@ export class ZoomConnection {
     this.generation++; this.clearTimers(); this.transient=undefined; this.checking=false;
     const active=this.active; this.active=undefined; await active?.close();
   }
-  async disconnect() { await this.cancel(); this.settings.disconnect(); }
+  async disconnect() { const closing=this.cancel(); this.settings.disconnect(); await closing; }
   async close() { await this.cancel(); }
   connect(input:{email?:unknown;password?:unknown}) {
     if (typeof input.email!=='string' || input.email.length>254 || !/^\S+@\S+\.\S+$/.test(input.email.trim()) ||
@@ -60,7 +60,9 @@ export class ZoomConnection {
   private async fail(g:number,message:string) {
     if(g!==this.generation)return;
     const email=this.transient?.email || '';
-    await this.cancel(); this.transient={status:'error',message,email};
+    const cancelledGeneration=this.generation+1;
+    await this.cancel();
+    if(this.generation===cancelledGeneration)this.transient={status:'error',message,email};
   }
   private async observe(g:number,email:string) {
     const browser=this.active; if(g!==this.generation || !browser)return;
@@ -101,9 +103,11 @@ export class ZoomConnection {
     return this.active;
   }
   async frame() {
+    const browser=this.browser();
     if(this.busy)throw new AppError(409,'Browser is busy.');
     this.busy=true;
-    try { const frame=await this.browser().frame(); if(frame.length>3_000_000)throw new AppError(413,'Browser image is too large.'); return frame; }
+    try { const frame=await browser.frame(); if(frame.length>3_000_000)throw new AppError(413,'Browser image is too large.'); return frame; }
+    catch(error) { if(browser!==this.active)throw new AppError(409,'No active Zoom sign-in browser.'); throw error; }
     finally {this.busy=false;}
   }
   async input(action:unknown) {

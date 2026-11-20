@@ -177,15 +177,16 @@ process.on("message", async (m: any) => {
     // Everything after admission belongs to recording, never to the retry loop.
     await maximizeZoomWindow(page!);
     await dismissZoomPopups(page!);
-    if (m.zoomState) {
-      const named = await applyMeetingName(page!, input.botName);
-      if (named !== 'applied') send({type:'name_warning', detail:'Zoom did not confirm the requested bot name. The account name may be visible; the host may restrict renaming.'});
-    }
+
     await page!
       .getByRole("button", { name: "Got it", exact: true })
       .first()
       .click({ timeout: 1000 })
       .catch(() => {});
+    if (m.zoomState) {
+      const named = await applyMeetingName(page!, input.botName);
+      if (named !== 'applied') send({type:'name_warning', detail:'Zoom did not confirm the requested bot name. The account name may be visible; the host may restrict renaming.'});
+    }
     // Some Zoom tenants require an explicit computer-audio confirmation after admission.
     const computer = page!
       .getByRole("button", { name: /Join (?:with )?Computer Audio/i })

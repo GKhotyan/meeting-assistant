@@ -1,6 +1,6 @@
 # Zoom Account Connection Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Optional Zoom email/password sign-in with verified session persistence,
 interactive fallback in the user's web browser, and per-meeting participant names.
@@ -48,14 +48,14 @@ modify `src/integrations/deepgram.ts`, `tests/deepgram.test.ts`.
 Metadata contains connection status/email only; session returns validated
 Playwright storage state exclusively to server/worker code.
 
-- [ ] Write tests for encryption, reconstructed stores after restart, disconnected
+- [x] Write tests for encryption, reconstructed stores after restart, disconnected
   guest mode, malformed states, symlinks, missing keys, expiration, and preservation
   of Deepgram keys when saving/removing Zoom state.
-- [ ] Run `node --import tsx --test tests/zoom-settings.test.ts tests/deepgram.test.ts`;
+- [x] Run `node --import tsx --test tests/zoom-settings.test.ts tests/deepgram.test.ts`;
   confirm new tests fail before implementation.
-- [ ] Extract existing encryption without changing its file format; add Zoom state
+- [x] Extract existing encryption without changing its file format; add Zoom state
   validation and atomic read/merge/write storage. Persist no password.
-- [ ] Rerun both suites and commit this independently testable storage change.
+- [x] Rerun both suites and commit this independently testable storage change.
 
 ### Task 2: Verified login and bounded interactive fallback
 
@@ -71,18 +71,18 @@ Status: `not_connected | connecting | action_required | connected | sign_in_requ
 `verifyZoomAuthentication(page)` confirms an authenticated Zoom account view with
 signed-in controls and rejects sign-in forms, intermediate redirects, and challenges.
 
-- [ ] Write fake-browser tests for valid credentials, wrong password, code/CAPTCHA,
+- [x] Write fake-browser tests for valid credentials, wrong password, code/CAPTCHA,
   timeout, expiry, cancellation, stale completion, and browser crash/cleanup.
-- [ ] Run the new suites to establish failing behavior.
-- [ ] Implement a dedicated login browser/display, 15-minute maximum pending login,
+- [x] Run the new suites to establish failing behavior.
+- [x] Implement a dedicated login browser/display, 15-minute maximum pending login,
   bounded automatic attempts, and verified storage-state export. Remove incognito
   in login mode; never log credentials or retain password in connection state.
-- [ ] Add screenshots and validated click/key/text/scroll input for the active login
+- [x] Add screenshots and validated click/key/text/scroll input for the active login
   page, including page/popup changes. Serialize actions, cap text/frame sizes, and
   reject coordinates outside the viewport or input without an active pending login.
-- [ ] Check connection in a separate temporary browser so checks cannot replace an
+- [x] Check connection in a separate temporary browser so checks cannot replace an
   interactive login. Persist refreshed verified state; clean all temporary profiles.
-- [ ] Run tests and commit connection service and lifecycle handling.
+- [x] Run tests and commit connection service and lifecycle handling.
 
 ### Task 3: Authenticated API and Settings interface
 
@@ -96,19 +96,19 @@ create `public/zoom-settings.js`, `tests/zoom-api.test.ts`,
 `POST /api/settings/zoom/browser/input` accepts the service's validated actions.
 Inject a test ZoomConnection via createApp options; production uses its own service.
 
-- [ ] Write API tests for authentication, allowed/rejected origins, unsupported
+- [x] Write API tests for authentication, allowed/rejected origins, unsupported
   methods, limits, no secret disclosure, cancellation and image access. Reject
   cross-site frame access including Fetch Metadata; do not publish browser ports.
-- [ ] Run API tests and confirm missing functionality fails.
-- [ ] Add routes after existing auth/origin guards and a dedicated English Zoom
+- [x] Run API tests and confirm missing functionality fails.
+- [x] Add routes after existing auth/origin guards and a dedicated English Zoom
   settings form. Clear password after Connect, poll metadata without overlapping
   requests, and show correction/reconnect/disconnect actions for distinct states.
-- [ ] Implement an accessible remote browser dialog with keyboard, pointer and
+- [x] Implement an accessible remote browser dialog with keyboard, pointer and
   scroll forwarding and a text-paste control. Scale image coordinates correctly.
   Stop frame polling when hidden/cancelled; never use session tokens in URLs.
-- [ ] Add browser smoke checks for successful/failed/challenged connection,
+- [x] Add browser smoke checks for successful/failed/challenged connection,
   keyboard operation, responsive dialog, cancellation, and secret-free metadata.
-- [ ] Run API and browser checks; commit Settings and remote login interface.
+- [x] Run API and browser checks; commit Settings and remote login interface.
 
 ### Task 4: Recording session and meeting identity
 
@@ -124,37 +124,39 @@ never include it in public Session records. Extend worker start IPC privately wi
 optional authentication state. `launchZoomBrowser(session?)` seeds an isolated
 profile; `applyMeetingName(page, name)` returns `applied | restricted | unavailable`.
 
-- [ ] Write failing tests for guest behavior, session seeding, incognito removal,
+- [x] Write failing tests for guest behavior, session seeding, incognito removal,
   stale session rejection, worker snapshot isolation, reconnect/disconnect during
   a recording, explicit prohibition without retries, and name restrictions.
-- [ ] Implement session snapshot delivery and authenticated browser setup. Verify
+- [x] Implement session snapshot delivery and authenticated browser setup. Verify
   auth before meeting navigation; report Sign-in required instead of joining as
   a guest when a configured session is invalid.
-- [ ] Fill requested per-meeting name in authenticated pre-join when available;
+- [x] Fill requested per-meeting name in authenticated pre-join when available;
   verify the actual participant name and try in-meeting Rename only if necessary.
   Report host restrictions without changing the account profile or failing capture.
-- [ ] Require an actual meeting Leave control for admission, excluding loading and
+- [x] Require an actual meeting Leave control for admission, excluding loading and
   waiting-room states. Preserve existing stop and cleanup behavior.
-- [ ] Stop retries on explicit bot prohibitions and replace unsupported assertions
+- [x] Stop retries on explicit bot prohibitions and replace unsupported assertions
   that every bot prohibition requires RTMS with precise platform wording.
-- [ ] Run affected worker/admission/name suites and commit integration changes.
+- [x] Run affected worker/admission/name suites and commit integration changes.
 
 ### Task 5: Container persistence, documentation and whole-branch verification
 
 **Files:** Modify `Dockerfile`, `README.md`, and runtime login display code as
 needed; add `tests/browser-zoom-container.cjs` and update the spec with outcomes.
 
-- [ ] Run `npm test`, `npm run typecheck`, `npm run build`, and `npm run test:vendor`.
-- [ ] Build a separate diagnostic image, without replacing the user's running
+- [x] Run `npm test`, `npm run typecheck`, `npm run build`, and `npm run test:vendor`.
+- [x] Build a separate diagnostic image, without replacing the user's running
   container. Test its health and Settings/interactive browser on a separate port
   and temporary data volume. Confirm no VNC/CDP port is exposed.
-- [ ] Verify verified session reuse after container restart, expired-session
+- [x] Verify verified session reuse after container restart, expired-session
   behavior and isolated recording workers, using a fixture for repeatable checks.
-- [ ] Run real Zoom sign-in, manual fallback and meeting name tests only with the
+- [x] Run real Zoom sign-in, manual fallback and meeting name tests only with the
   user's available account/meeting. Report unverified MFA/host restrictions plainly.
-- [ ] Visually inspect Settings and remote browser UI at desktop and narrow widths.
+- [x] Visually inspect Settings and remote browser UI at desktop and narrow widths.
   Update README with optional credentials, session-only persistence, login on a VM,
   reconnect, name restrictions, and the absence of guaranteed anti-bot admission.
-- [ ] Review the final diff and tests against the approved spec, commit, and report
+- [x] Review the final diff and tests against the approved spec, commit, and report
   branch name, checks, runtime changes, and any outstanding external verification.
   Do not merge, push, publish, or replace the running service as part of this plan.
+
+Execution notes and external verification limits: see `docs/validation.md`, Optional Zoom account validation. No live MFA/CAPTCHA or successful live in-meeting rename is claimed.

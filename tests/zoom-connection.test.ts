@@ -47,3 +47,35 @@ test('interactive browser validates inputs and expires unattended login', async 
   await new Promise(r=>setTimeout(r,40)); assert.equal(service.metadata().status,'error');
   await assert.rejects(()=>service.frame(),/no active/i); await service.close();
 });
+test('a disconnect waiting for old browser cleanup cannot erase a newer account',async()=>{
+  const dir=root(),old=driver(),fresh=driver(true);
+  let release!:()=>void;old.close=()=>new Promise<void>(r=>release=r);
+  let count=0;const service=new ZoomConnection(dir,async()=>count++?fresh:old,{pollMs:5});
+  service.connect({email:'bot@example.com',password:'secret'});await tick();
+  const closing=service.disconnect();
+  service.connect({email:'new@example.com',password:'secret'});await tick();
+  release();await closing;
+  assert.equal(service.metadata().status,'connected');assert.equal(service.metadata().email,'new@example.com');await service.close();
+});
+test('stale browser failure cannot overwrite a newer pending login',async()=>{
+  const old=driver(),fresh=driver();let release!:()=>void;
+  old.verify=async()=>{throw Error('crash');};old.close=()=>new Promise<void>(r=>release=r);
+  let count=0;const service=new ZoomConnection(root(),async()=>count++?fresh:old,{pollMs:5});
+  service.connect({email:'bot@example.com',password:'secret'});await tick();
+  service.connect({email:'new@example.com',password:'secret'});await tick();release();await tick();
+  assert.equal(service.metadata().status,'action_required');assert.equal(service.metadata().email,'new@example.com');await service.close();
+});
+test('a screenshot interrupted by successful login or cancellation returns a recoverable conflict',async()=>{
+  const d=driver();let reject!:(error:Error)=>void;
+  d.frame=()=>new Promise((_r,j)=>reject=j);
+  const service=new ZoomConnection(root(),async()=>d,{pollMs:5});
+  service.connect({email:'bot@example.com',password:'secret'});await tick();
+  const image=service.frame();await service.cancel();reject(Error('Target closed'));
+  await assert.rejects(()=>image,(e:any)=>e.status===409);await service.close();
+});
+test('requesting a frame while disconnected does not block the next sign-in browser',async()=>{
+  const service=new ZoomConnection(root(),async()=>driver(),{pollMs:5});
+  await assert.rejects(()=>service.frame(),/no active/i);
+  service.connect({email:'bot@example.com',password:'secret'});await tick();
+  assert.equal((await service.frame()).toString(),'frame');await service.close();
+});

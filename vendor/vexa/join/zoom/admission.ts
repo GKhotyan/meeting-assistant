@@ -14,7 +14,6 @@ import { BotConfig } from "../_host";
 import { checkEscalation, triggerEscalation, getEscalationExtensionMs } from "../shared/escalation";
 import {
   zoomLeaveButtonSelector,
-  zoomMeetingAppSelector,
   zoomWaitingRoomTexts,
   zoomRemovalTexts,
   zoomBotBlockTexts,
@@ -54,42 +53,27 @@ async function detectZoomBotBlock(page: Page): Promise<string | null> {
   }
 }
 
-/**
- * Check if the bot is confirmed inside the meeting.
- * Primary:   Leave button visible (footer is showing). Strong positive —
- *            this control never renders in the waiting room.
- * Fallback1: .meeting-app container present (footer may be auto-hidden).
- * Fallback2: live <audio> elements AND no pre-join-page indicators —
- *            Zoom Web preloads audio streams on the pre-join page itself
- *            (local mic preview), so audio presence alone is NOT enough.
- *            Require the pre-join name input AND join button to be absent.
- *            (Observed 2026-04-26 meeting_id=31: bot was at
- *            "Enter Meeting Info"/passcode-entry screen with 3 live audio
- *            elements; an earlier audio-only fallback falsely reported
- *            admitted, status=active appeared on the dashboard while the
- *            bot was actually still pre-join.)
- *
- * IMPORTANT — waiting-room exclusion runs before BOTH fallbacks:
- * Zoom renders the waiting room INSIDE `.meeting-app` (so fallback 1
- * fires false-positive there), and the bot's mic-preview audio stays live
- * across the pre-join → waiting-room transition while pre-join DOM
- * indicators are already gone (so fallback 2 fires false-positive too).
- * Without the exclusion, the bot reports admitted and the dashboard skips
- * the `awaiting_admission` state entirely. Observed 2026-04-26
- * meeting_id=36: screenshot showed "Host has joined. We've let them know
- * you're here." while the bot reported admitted=true.
- */
+/** Only the meeting Leave control proves admission. Loading shells and
+ * preloaded media also occur before entry and must not trigger capture. */
 async function isAdmitted(page: Page): Promise<boolean> {
   try {
     // Strong positive: Leave button is footer-only, never appears in
     // pre-join or waiting room. Trust it without further checks.
     const leaveBtn = page.locator(zoomLeaveButtonSelector).first();
-    if (await leaveBtn.isVisible({ timeout: 500 })) return true;
-
-    // A loading shell and preloaded media can exist before admission.
-    // Reveal auto-hidden controls before deciding; only Leave proves admission.
-    await page.mouse?.move(600, 700).catch(() => {});
-    return await leaveBtn.isVisible({ timeout: 500 });
+    if (!await leaveBtn.isVisible({ timeout: 500 })) {
+      await page.mouse?.move(600, 700).catch(() => {});
+      if (!await leaveBtn.isVisible({ timeout: 500 })) return false;
+    }
+    if (!await leaveBtn.isEnabled()) return false;
+    // Some client versions render Leave while still connecting, alongside a
+    // disabled participant list with count zero. Wait for usable meeting controls.
+    const participants=page.locator('button[aria-label*="participants list pane"]').first();
+    if (await participants.count()) {
+      if (!await participants.isEnabled()) return false;
+      const label=await participants.getAttribute('aria-label');
+      if (/\[0\]/.test(label || '')) return false;
+    }
+    return true;
   } catch {
     return false;
   }
@@ -202,7 +186,7 @@ export async function waitForZoomMeetingAdmission(
       throw new AdmissionError('auth_session_missing', '[Zoom Web] auth_required: sign in to join this meeting');
     }
     if (wall) {
-      log(`[Zoom Web] 🚫 Anti-bot wall detected during poll (matched: "${wall}") — requires Zoom RTMS. Failing fast.`);
+      log(`[Zoom Web] 🚫 Anti-bot wall detected during poll (matched: "${wall}") — Zoom has refused automated browser entry.`);
       await callBlockedCallback(botConfig, 'zoom_bot_blocked', { matched: wall, phase: 'admission_poll' });
       throw new AdmissionError('denial', '[Zoom Web] zoom_bot_blocked: Zoom refused automated browser entry. Repeated attempts will not resolve this refusal.');
     }

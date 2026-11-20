@@ -1,4 +1,4 @@
-import { setPreJoinName } from "../../../../src/zoom/meeting-name";
+import { setPreJoinName } from './name';
 import { AdmissionError } from '../shared/admission';
 import { Page } from "playwright";
 import { log, callJoiningCallback } from "../_host";

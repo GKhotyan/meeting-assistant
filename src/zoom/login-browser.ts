@@ -28,20 +28,14 @@ export async function createLoginBrowser(state?:ZoomState):Promise<LoginDriver> 
     const {context}=browser;
     if(state)await hydrateSession(context,state);
     let current=browser.page;
-    let probing=false;
-    context.on('page',page=>{if(!probing)current=page;});
-    const page=():Page=>current.isClosed() ? context.pages().filter(p=>!p.isClosed()).at(-1)! : current;
+    context.on('page',page=>{void page.opener().then(opener=>{if(opener && !page.isClosed())current=page;}).catch(()=>{});});
+    const page=():Page=>current.isClosed() ? context.pages().find(p=>!p.isClosed())! : current;
     // Probes are not interactive pages; preserve the user's focused login page.
-    const verify=async()=>{const active=current;probing=true;try{return await verifyContext(context);}finally{probing=false;if(!active.isClosed())current=active;}};
+    const verify=()=>verifyContext(context);
     let closed=false;
     return {
       async start(email,password) {
-        await page().goto('https://zoom.us/signin',{waitUntil:'domcontentloaded',timeout:30000});
-        for(const s of ['#onetrust-reject-all-handler','#onetrust-accept-btn-handler'])
-          await page().locator(s).click({timeout:700}).catch(()=>{});
-        await page().locator('input[type="email"], #email, input[name="email"]').first().fill(email,{timeout:10000});
-        await page().locator('input[type="password"]').first().fill(password,{timeout:10000});
-        await page().getByRole('button',{name:/^sign in$/i}).first().click({timeout:5000});
+        await submitZoomCredentials(page(),email,password);
       },verify,
       async problem() {
         const text=await page().locator('body').innerText({timeout:3000});
@@ -59,4 +53,13 @@ export async function createLoginBrowser(state?:ZoomState):Promise<LoginDriver> 
       async close(){if(closed)return;closed=true;await context.close().catch(()=>{});display?.process.kill();rmSync(profile,{recursive:true,force:true});},
     };
   } catch(error) { await browser?.context.close().catch(()=>{});display?.process.kill();rmSync(profile,{recursive:true,force:true});throw error; }
+}
+
+export async function submitZoomCredentials(page:Page,email:string,password:string):Promise<void> {
+  await page.goto('https://zoom.us/signin',{waitUntil:'domcontentloaded',timeout:30000});
+  for(const s of ['#onetrust-reject-all-handler','#onetrust-accept-btn-handler'])
+    await page.locator(s).click({timeout:700}).catch(()=>{});
+  await page.locator('input[type="email"], #email, input[name="email"]').first().fill(email,{timeout:10000});
+  await page.locator('input[type="password"]').first().fill(password,{timeout:10000});
+  await page.getByRole('button',{name:/^sign in$/i}).first().click({timeout:5000});
 }

@@ -977,9 +977,10 @@ footer {
 
 /* Optional Zoom connection and server browser. */
 #zoom-title .muted { font-size: .7em; font-weight: 400; margin-left: .5rem; }
+#zoom-form > input { margin-bottom: 1rem; }
 #zoom-browser { width: min(1360px, 96vw); max-width: 96vw; max-height: 94vh; padding: 1.25rem; overflow: auto; }
 .zoom-browser-heading { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
-#zoom-browser-image { display: block; width: 100%; aspect-ratio: 1280 / 900; object-fit: contain; background: #eef1f4; border: 1px solid var(--border, #cbd5e1); border-radius: .5rem; margin: 1rem 0; cursor: default; }
+#zoom-browser-image { display: block; width: min(100%, calc(100vh - 240px)); aspect-ratio: 1280 / 900; object-fit: contain; background: #eef1f4; border: 1px solid var(--border, #cbd5e1); border-radius: .5rem; margin: 1rem auto; cursor: default; }
 #zoom-browser-image:focus-visible { outline: 3px solid var(--accent, #2563eb); outline-offset: 2px; }
 .zoom-browser-paste { display: flex; gap: .75rem; align-items: center; }
 .zoom-browser-paste input { min-width: 0; flex: 1; }

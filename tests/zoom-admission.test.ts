@@ -26,3 +26,13 @@ test('loading meeting shell without Leave control is not admitted',async()=>{
   p.locator=(selector:string)=>{const l:any={first:()=>l,isVisible:async()=>selector==='.meeting-app',count:async()=>0};return l;};
   await assert.rejects(waitForZoomMeetingAdmission(p,0,{}));
 });
+test('a loading footer with Leave but disabled participant controls is not admitted',async()=>{
+  const p=page('Joining Meeting…');
+  p.locator=(selector:string)=>{const l:any={first:()=>l,isVisible:async()=>selector.includes('Leave'),isEnabled:async()=>selector.includes('Leave'),getAttribute:async()=>null,count:async()=>1};return l;};
+  await assert.rejects(waitForZoomMeetingAdmission(p,0,{}));
+});
+test('zero participants in an enabled loading footer is not proof of admission',async()=>{
+  const p=page('Joining Meeting…');
+  p.locator=(selector:string)=>{const l:any={first:()=>l,isVisible:async()=>selector.includes('Leave'),isEnabled:async()=>true,getAttribute:async()=> 'open the participants list pane,[0] particpants',count:async()=>1};return l;};
+  await assert.rejects(waitForZoomMeetingAdmission(p,0,{}));
+});
