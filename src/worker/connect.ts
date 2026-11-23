@@ -21,7 +21,7 @@ function retryable(error: unknown) {
   const text = String(error).replace(/https?:\/\/[^\s"'<>]+/gi, "[URL]");
   // Explicit platform decisions win over generic timeout/browser wording.
   if (/auth_required|auth_session_missing|authentication|passcode|password|rejected|removed|meeting (?:has )?ended|host ended|host did not start/i.test(text)) return false;
-  if (error instanceof AdmissionError) return error.outcome === "join_failure" || (error.outcome === "denial" && /zoom_requires_rtms/.test(text));
+  if (error instanceof AdmissionError) return error.outcome === "join_failure";
   return /net::ERR_|ECONNRESET|ECONNREFUSED|ETIMEDOUT|EAI_AGAIN|ENOTFOUND|Target (?:page, context or browser|closed)|browser (?:has been closed|closed unexpectedly)|page crashed|TimeoutError|Timeout \d+ms exceeded/i.test(text);
 }
 function abortError() { return new DOMException("Connection stopped", "AbortError"); }

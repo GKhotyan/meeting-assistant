@@ -974,3 +974,23 @@ footer {
 
 .meeting-title { display:inline-block; max-width:75%; overflow-wrap:anywhere; }
 .timestamp:hover { color:#fff; }
+
+/* Optional Zoom connection and server browser. */
+#zoom-title .muted { font-size: .7em; font-weight: 400; margin-left: .5rem; }
+#zoom-form > input { margin-bottom: 1rem; }
+#zoom-browser { width: min(1360px, 96vw); max-width: 96vw; max-height: 94vh; padding: 1.25rem; overflow: auto; }
+.zoom-browser-heading { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
+#zoom-browser-image { display: block; width: min(100%, calc(100vh - 240px)); aspect-ratio: 1280 / 900; object-fit: contain; background: #eef1f4; border: 1px solid var(--border, #cbd5e1); border-radius: .5rem; margin: 1rem auto; cursor: default; }
+#zoom-browser-image:focus-visible { outline: 3px solid var(--accent, #2563eb); outline-offset: 2px; }
+.zoom-browser-paste { display: flex; gap: .75rem; align-items: center; }
+.zoom-browser-paste input { min-width: 0; flex: 1; }
+@media (max-width: 600px) { #zoom-browser { padding: .75rem; } .zoom-browser-paste { flex-direction: column; align-items: stretch; } }
+
+/* Account guidance remains available on hover, keyboard focus and touch. */
+.zoom-field-heading { display: flex; align-items: center; gap: .5rem; margin-bottom: .4rem; }
+.zoom-field-heading h2 { margin: 0; }
+.field-help { position: relative; display: inline-flex; }
+.field-help-button { display: inline-flex; align-items: center; justify-content: center; width: 1.25rem; height: 1.25rem; min-height: 0; padding: 0; border: 1px solid #94a3b8; border-radius: 50%; background: transparent; color: #475569; font-size: .8rem; line-height: 1; cursor: help; box-shadow: none; }
+.field-help-button:hover, .field-help-button:focus-visible { background: #e8edff; color: #2448bd; }
+.field-help-tooltip { position: absolute; z-index: 20; top: calc(100% + .5rem); left: -5rem; width: min(320px, 72vw); padding: .8rem 1rem; border: 1px solid #dbe3ef; border-radius: .6rem; background: #fff; color: #334155; font-size: .85rem; font-weight: 400; line-height: 1.5; box-shadow: 0 8px 24px #0f172a24; visibility: hidden; opacity: 0; }
+.field-help:hover .field-help-tooltip, .field-help:focus-within .field-help-tooltip { visibility: visible; opacity: 1; }

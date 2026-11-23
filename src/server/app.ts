@@ -1,3 +1,4 @@
+import { ZoomConnection } from "../zoom/connection";
 import { createServer, IncomingMessage, ServerResponse } from "node:http";
 import {
   readFileSync,
@@ -15,8 +16,9 @@ import { openReadyFile } from "../recordings/access";
 const hash = (s: string) => createHash("sha256").update(s).digest();
 export function createApp(
   controller: Controller,
-  options: { password?: string; publicDir: string; scheduler?: Scheduler; publicOrigin?: string; deepgramFetch?: typeof fetch },
+  options: { zoom?: ZoomConnection; password?: string; publicDir: string; scheduler?: Scheduler; publicOrigin?: string; deepgramFetch?: typeof fetch },
 ) {
+  const zoom = options.zoom ?? new ZoomConnection(controller.root);
   const deepgram = new DeepgramSettings(controller.root);
   const transcriptions = new Transcriptions(controller, deepgram, options.deepgramFetch);
   const publicUrl = options.publicOrigin ? new URL(options.publicOrigin) : undefined;
@@ -29,7 +31,7 @@ export function createApp(
       res.setHeader("Cache-Control", "no-store");
       res.setHeader(
         "Content-Security-Policy",
-        "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; media-src 'self'; frame-ancestors 'none'",
+        "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; media-src 'self'; frame-ancestors 'none'",
       );
       const url = new URL(req.url || "/", "http://localhost");
       const path = url.pathname;
@@ -92,6 +94,27 @@ export function createApp(
           throw new AppError(400, "Invalid JSON");
         }
       };
+      if (path.startsWith("/api/settings/zoom")) {
+        if (req.headers["sec-fetch-site"] === "cross-site" || req.headers["sec-fetch-site"] === "same-site")
+          throw new AppError(403, "Cross-site browser access is not allowed");
+        if (req.headers.origin) {
+          const origin = new URL(req.headers.origin);
+          if (publicUrl ? origin.origin !== publicUrl.origin : origin.host !== req.headers.host)
+            throw new AppError(403, "Cross-site browser access is not allowed");
+        }
+        if (path === "/api/settings/zoom") {
+          if (req.method === "GET") json(200, zoom.metadata());
+          else if (req.method === "DELETE") { await body(); await zoom.disconnect(); json(200, zoom.metadata()); }
+          else throw new AppError(405, "Method not allowed");
+        } else if (path === "/api/settings/zoom/connect" && req.method === "POST") json(202, zoom.connect(await body()));
+        else if (path === "/api/settings/zoom/check" && req.method === "POST") { await body(); json(202, zoom.check()); }
+        else if (path === "/api/settings/zoom/cancel" && req.method === "POST") { await body(); await zoom.cancel(); json(200, zoom.metadata()); }
+        else if (path === "/api/settings/zoom/browser/frame" && req.method === "GET") {
+          const frame = await zoom.frame(); res.writeHead(200, {"Content-Type":"image/jpeg", "Cross-Origin-Resource-Policy":"same-origin"}); res.end(frame);
+        } else if (path === "/api/settings/zoom/browser/input" && req.method === "POST") { await zoom.input(await body()); json(200,{ok:true}); }
+        else throw new AppError(405, "Method not allowed");
+        return;
+      }
       if (path === "/api/schedules" && options.scheduler) {
         if (req.method === "GET") json(200, { schedules: options.scheduler.list() });
         else if (req.method === "POST") json(201, options.scheduler.create(await body()));
@@ -208,6 +231,7 @@ export function createApp(
       const assets: Record<string, string> = {
         "/": "index.html",
         "/app.js": "app.js",
+        "/zoom-settings.js": "zoom-settings.js",
         "/meeting.js": "meeting.js",
         "/style.css": "style.css",
       };

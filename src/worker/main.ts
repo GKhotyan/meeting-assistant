@@ -1,3 +1,4 @@
+import { applyMeetingName } from "../zoom/meeting-name";
 import { connectWithRetries } from "./connect";
 import { maximizeZoomWindow } from "./window";
 import { watchBrowser } from "./lifecycle";
@@ -97,6 +98,7 @@ process.on("message", async (m: any) => {
     const input = m.input as StartInput;
     config = {
       platform: "zoom",
+      authenticated: !!m.zoomState,
       botName: input.botName,
       automaticLeave: { waitingRoomTimeout: 300000 },
     };
@@ -118,7 +120,7 @@ process.on("message", async (m: any) => {
       signal: connectionAbort.signal,
       open: () => {
         connectionAttempt++;
-        return launchZoomBrowser();
+        return launchZoomBrowser(m.zoomState);
       },
       async connect(browser) {
         const attempt = connectionAttempt;
@@ -175,11 +177,16 @@ process.on("message", async (m: any) => {
     // Everything after admission belongs to recording, never to the retry loop.
     await maximizeZoomWindow(page!);
     await dismissZoomPopups(page!);
+
     await page!
       .getByRole("button", { name: "Got it", exact: true })
       .first()
       .click({ timeout: 1000 })
       .catch(() => {});
+    if (m.zoomState) {
+      const named = await applyMeetingName(page!, input.botName);
+      if (named !== 'applied') send({type:'name_warning', detail:'Zoom did not confirm the requested bot name. The account name may be visible; the host may restrict renaming.'});
+    }
     // Some Zoom tenants require an explicit computer-audio confirmation after admission.
     const computer = page!
       .getByRole("button", { name: /Join (?:with )?Computer Audio/i })
@@ -223,6 +230,7 @@ process.on("message", async (m: any) => {
     void emptyMeetingMonitor.check();
     send({ type: "status", status: "recording" });
   } catch (e) {
+    if (/auth_session_missing|Zoom sign-in required/.test(String(e))) send({type:"zoom_auth_expired"});
     if (!stopRequested) await stop(String(e));
   }
 });

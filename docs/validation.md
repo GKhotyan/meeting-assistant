@@ -49,3 +49,34 @@ Implemented one-session connection retries with four attempts maximum and delays
 - Independent read-only review found URL keywords suppressing transient retries; reproduced and fixed. Also fixed unfinished attempts remaining Connecting after worker exit/error. Regression tests observed RED then GREEN.
 - Built image `sha256:5cc34089243ffe433874dac3aceaf14c43d7fa20e9eafbee3b56299c3d5f333f`; recreated local app only after verifying no active sessions. Container healthy; `/health`, `/api/sessions`, and served retry UI checked. All 12 existing sessions remain available.
 - Behavioral smoke test inside deployed image confirmed four attempts, exact delays, browser cleanup order, successful recovery, and password redaction using simulated network errors. No additional live Zoom join was made during implementation; platform admission still depends on Zoom.
+
+
+## Optional Zoom account validation — 2026-11-20
+
+Implemented on `feat/zoom-account`, branched from `main`, independently of the
+separate AI settings branch.
+
+- Optional Settings email/password connection; the password is not persisted.
+  Verified sessions share the existing encrypted credential store without replacing
+  Deepgram keys. Disconnect and reconnect retain recording-worker isolation.
+- Automatic form submission, delayed profile rendering, remote image delivery under
+  the real HTTP Content Security Policy, pointer/text input, verification completion,
+  session encryption, Settings reload, and desktop/mobile layouts were exercised by
+  `tests/browser-zoom-container.cjs` with external Zoom pages represented by fixtures.
+- Browser tests cover current Zoom participant-pane labels, delayed pane rendering,
+  exact display-name comparison, pre-join name changes, and a rename modal that has
+  no ARIA dialog role. Worker tests require introduction dismissal before name access.
+- Live Docker checks confirmed an authenticated Zoom profile, encrypted session
+  reuse after a test-container restart, actual meeting entry, and `PIM Assistant`
+  visible as the current participant after a pre-join name change. Tests left the
+  meeting without starting recording.
+- The last live in-meeting rename verification attempt was blocked by a Zoom profile
+  navigation timeout before meeting entry. The fallback is fixture-tested, not
+  claimed as a successful live rename. Actual MFA, CAPTCHA, SSO, host rename
+  restrictions, and long-term session expiry remain controlled by Zoom.
+- Independent review identified deferred-close races, substring-based name matching,
+  and missing blob-image CSP permission; each was corrected and regression-tested.
+- A separate test image/container was used. The existing recording service, data,
+  registry images, and main branch were not replaced or published.
+
+Final verification: 133 application tests passed; typecheck, production build and vendor tests passed. Final diagnostic image: `sha256:d76df64158f5d491f1bde29f732a004a31331908983dfb0bc5804cb87548920b`; health endpoint returned HTTP 200.

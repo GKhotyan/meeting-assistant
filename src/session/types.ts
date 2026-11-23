@@ -30,6 +30,7 @@ export interface Session {
   id: string;
   meetingName: string;
   botName: string;
+  nameWarning?: string;
   recordingMode?: RecordingMode;
   createdAt: string;
   status: Status;

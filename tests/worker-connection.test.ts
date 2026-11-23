@@ -17,7 +17,7 @@ async function run(scenario: string, action: (message: any, child: ReturnType<ty
   child.on("message", (m: any) => { messages.push(m); action(m, child); });
   const watchdog = setTimeout(() => child.kill("SIGKILL"), 5000);
   try {
-    child.send({ type: "start", input: { meetingUrl: "https://zoom.us/j/12345678901", botName: "Bot", recordingMode: "audio" }, sessionDir: "/tmp" });
+    child.send({ type: "start", input: { meetingUrl: "https://zoom.us/j/12345678901", botName: "Bot", recordingMode: "audio" }, sessionDir: "/tmp", ...(scenario==='authenticated'?{zoomState:{cookies:[],origins:[]}}:{}) });
     await exit;
     assert.equal(stderr, "");
     assert.ok(messages.some(m => m.type === "done"), "worker must confirm completion instead of timing out");
@@ -39,6 +39,12 @@ for (const scenario of ["retry", "crash-connect", "screenshot-failure"]) test(`r
   assert.equal(captures[0].options.path, "/tmp/connection-attempt-1-error.png");
   assert.ok(captures[0].options.timeout <= 5000);
   assert.ok(events.indexOf("diagnostic-screenshot1") < events.indexOf("closed1"));
+});
+test('authenticated worker dismisses blocking introduction before accessing participant names',async()=>{
+  const messages=await run('authenticated',(m,child)=>{if(m.status==='recording')child.send({type:'stop'});});
+  const events=messages.filter(m=>m.type==='probe').map(m=>m.event);
+  assert.ok(events.indexOf('intro-dismissed')>=0);
+  assert.ok(events.indexOf('intro-dismissed')<events.indexOf('name-checked'));
 });
 for (const scenario of ["stop-launch", "stop-admission", "stop-delay"]) test(`real worker cancels ${scenario} and closes its browser before done`, async () => {
   let stopped = false;
