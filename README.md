@@ -87,7 +87,7 @@ not guarantee meeting admission: Zoom and the meeting host can still refuse entr
 If Zoom requests a verification code, CAPTCHA, SSO, or another manual step, choose
 **Continue in browser**. The interactive view shows the browser running on your
 server, including when Docker runs on a remote VM. Click the image to focus a field
-and type, or use the paste-text control. A separate browser on your own computer
+and type, or click a field and use **Replace field** or **Clear field**. The replacement control replaces its contents instead of appending. A separate browser on your own computer
 cannot authorize the container. Closing this view leaves sign-in pending;
 **Cancel sign-in** ends it. Pending sign-in expires after fifteen minutes.
 

@@ -71,7 +71,8 @@
   });
   image.addEventListener('paste',event=>{const text=event.clipboardData?.getData('text');if(text){event.preventDefault();input({type:'text',text:text.slice(0,4096)});}});
   image.addEventListener('wheel',event=>{event.preventDefault();input({type:'scroll',deltaY:Math.max(-2000,Math.min(2000,event.deltaY))});},{passive:false});
-  el('zoom-browser-send').onclick=()=>{const text=el('zoom-browser-text').value;el('zoom-browser-text').value='';if(text)input({type:'text',text});};
+  el('zoom-browser-send').onclick=()=>{const text=el('zoom-browser-text').value;el('zoom-browser-text').value='';if(text){input({type:'key',key:'ControlOrMeta+a'});input({type:'text',text});}};
+  el('zoom-browser-clear').onclick=()=>{el('zoom-browser-text').value='';input({type:'key',key:'ControlOrMeta+a'});input({type:'key',key:'Backspace'});};
   const refresh=setInterval(()=>{if(!stopped && !document.hidden){void load();void frame();}},1200);
   window.addEventListener('pagehide',()=>{stopped=true;clearInterval(refresh);if(imageUrl)URL.revokeObjectURL(imageUrl);});
   void load();

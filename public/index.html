@@ -158,8 +158,9 @@
   <div class="zoom-browser-heading"><h2 id="zoom-browser-title">Complete Zoom sign-in</h2><button id="zoom-browser-close" class="secondary" type="button">Close browser view</button></div>
   <p class="muted">This browser runs on the server. Click the image and use your keyboard to sign in. Verification codes and CAPTCHA must be completed by you. Closing this view keeps sign-in pending until you cancel or it times out.</p>
   <img id="zoom-browser-image" alt="Remote Zoom sign-in browser. Click to focus and interact." tabindex="0" draggable="false" />
-  <label for="zoom-browser-text">Paste text into the focused browser field</label>
-  <div class="zoom-browser-paste"><input id="zoom-browser-text" type="password" autocomplete="off" maxlength="4096" /><button id="zoom-browser-send" type="button">Send text</button></div>
+  <p class="muted">1. Click the email, password, or verification field in the image above. 2. Enter its new value below. 3. Choose Replace field. Clear field removes its current contents. Then click Next or Sign in inside the image.</p>
+  <label for="zoom-browser-text">Replace the selected Zoom field</label>
+  <div class="zoom-browser-paste"><input id="zoom-browser-text" type="password" autocomplete="off" maxlength="4096" /><button id="zoom-browser-send" type="button">Replace field</button><button id="zoom-browser-clear" class="secondary" type="button">Clear field</button></div>
   <p id="zoom-browser-feedback" role="status" aria-live="polite"></p>
 </dialog>
 </body>

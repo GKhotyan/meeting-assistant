@@ -60,6 +60,11 @@ export async function submitZoomCredentials(page:Page,email:string,password:stri
   for(const s of ['#onetrust-reject-all-handler','#onetrust-accept-btn-handler'])
     await page.locator(s).click({timeout:700}).catch(()=>{});
   await page.locator('input[type="email"], #email, input[name="email"]').first().fill(email,{timeout:10000});
-  await page.locator('input[type="password"]').first().fill(password,{timeout:10000});
+  const passwordField=page.locator('input[type="password"]').first();
+  if(!await passwordField.isVisible()) {
+    const next=page.getByRole('button',{name:/^next$/i}).first();
+    if(await next.isVisible())await next.click({timeout:5000});
+  }
+  await passwordField.fill(password,{timeout:10000});
   await page.getByRole('button',{name:/^sign in$/i}).first().click({timeout:5000});
 }
