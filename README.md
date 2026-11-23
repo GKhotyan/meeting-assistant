@@ -78,7 +78,13 @@ Rules and launch claims live in `data/schedules.json` and survive container recr
 
 ## Zoom account settings
 
-Open **Settings → Zoom account**, enter your Zoom email and password, and click
+Connecting a Zoom account is optional. Register a separate Zoom account specifically
+for the bot and use that account’s email and password here, rather than your personal
+credentials. Signing up is straightforward. An authenticated session may improve the
+bot’s chances of passing Zoom’s checks and joining meetings, but does not guarantee
+admission. Without a connected account, the bot joins as a guest.
+
+Open **Settings → Zoom account**, enter the bot account’s email and password, and click
 **Connect**. The application attempts sign-in and confirms access to the account
 profile before showing **Connected**. Connecting does not join or record a meeting.
 The password is used only for that attempt and is not saved. Authentication does
