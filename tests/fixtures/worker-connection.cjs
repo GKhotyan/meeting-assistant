@@ -27,7 +27,9 @@ substitute("src/worker/browser.ts", {
       if (closed) throw Error("Screenshot after browser cleanup");
     };
     const locator = { first: () => locator, click: async () => {}, isVisible: async () => false, allTextContents: async () => ["2"] };
-    page.getByRole = page.locator = () => locator;
+    page.locator = () => locator;
+    const intro={...locator,first:()=>intro,click:async()=>probe('intro-dismissed')};
+    page.getByRole = (_role,options) => options?.name === 'Got it' ? intro : locator;
     page.number = number;
     current = page;
     probe("opened", { number });
@@ -39,7 +41,7 @@ substitute("src/worker/browser.ts", {
 });
 const { AdmissionError } = require(join(root, "vendor/vexa/join/shared/admission.ts"));
 substitute("vendor/vexa/join/zoom/join.ts", { joinZoomMeeting: async page => {
-  if (["retry", "screenshot-failure"].includes(scenario) && page.number === 1) throw new AdmissionError("denial", "zoom_requires_rtms: automated bots aren't allowed");
+  if (["retry", "screenshot-failure"].includes(scenario) && page.number === 1) throw Error("net::ERR_CONNECTION_RESET");
   if (scenario === "stop-delay") throw Error("net::ERR_CONNECTION_RESET");
   if (scenario === "crash-connect" && page.number === 1) { page.emit("crash"); return new Promise(() => {}); }
 } });
@@ -52,6 +54,7 @@ substitute("vendor/vexa/join/zoom/leave.ts", {
   leaveZoomMeeting: async () => probe("leave"), dismissZoomPopups: async () => {},
 });
 substitute("src/worker/window.ts", { maximizeZoomWindow: async () => {} });
+substitute("src/zoom/meeting-name.ts", { applyMeetingName: async () => { probe('name-checked'); return 'applied'; } });
 substitute("src/worker/audio.ts", { createAudioRecorder: async () => ({
   startedAtMs: Date.now(), stop: async () => { probe("audio-stopped"); return { id: "audio", kind: "audio" }; },
 }) });

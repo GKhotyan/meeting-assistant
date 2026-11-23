@@ -175,6 +175,12 @@ function render(sessions) {
       countdown.textContent = retryLabel(s.nextRetryAt);
       card.append(countdown);
     }
+    if (s.nameWarning) {
+      const warning = document.createElement("p");
+      warning.textContent = s.nameWarning;
+      warning.className = "muted";
+      card.append(warning);
+    }
     if (s.error) {
       const error = document.createElement("p");
       error.textContent = s.error;

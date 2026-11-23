@@ -2,7 +2,7 @@
 
 **Record Zoom meetings. Turn audio into timestamped transcripts. Keep the results on your own infrastructure.**
 
-Meeting Assistant is a self-hosted application for recording and transcribing Zoom meetings. It joins as a guest, captures audio alongside video or timestamped screenshots, and turns completed recordings into readable transcripts through Deepgram Nova-3. Manage recordings, recurring meetings, and transcription from one web interface; deploy locally with Docker or on your own Linux server.
+Meeting Assistant is a self-hosted application for recording and transcribing Zoom meetings. It joins as a guest or with an optional Zoom account, captures audio alongside video or timestamped screenshots, and turns completed recordings into readable transcripts through Deepgram Nova-3. Manage recordings, recurring meetings, and transcription from one web interface; deploy locally with Docker or on your own Linux server.
 
 Recordings and transcripts are stored on your host. Transcription is optional: audio is sent to Deepgram only when you explicitly start processing. Recording itself requires no transcription API key.
 
@@ -17,6 +17,7 @@ Recordings and transcripts are stored on your host. Transcription is optional: a
 - **Persistent recordings** — files live on your host, survive container recreation, and can be downloaded from the interface.
 - **Background sessions** — close the browser tab while recording continues; stop a session to finalize files and leave Zoom.
 - **Recurring meetings** — choose weekdays, local time, time zone, bot name, and recording mode; the bot joins automatically while the service is running.
+- **Optional Zoom account** — sign in from Settings, complete additional verification in the server browser, and reuse an encrypted session across container restarts. Meeting names remain configurable when Zoom permits renaming.
 - **Deepgram transcription** — Nova-3 speech recognition with language selection, formatted text, timestamps, and optional speaker diarization. Click a timestamp to play the corresponding audio.
 - **Persistent transcripts** — results and processing status are saved alongside each recording and remain available after a restart.
 - **Optional external processing** — recording works without a Vexa account or transcription API key; configure your own Deepgram key when you need transcripts.
@@ -78,6 +79,46 @@ Each recurring meeting has an optional **Summary instructions** section. Enter a
 At recording launch, the application copies the resolved instructions into `session.json` as `summaryPrompt`, with `summaryPromptSource` set to `default` or `custom`. Editing a schedule affects future recordings; earlier recordings retain their original instructions. Existing recordings without this metadata are left unchanged. This currently stores instructions for future summary generation; scheduling and saving prompts do not send content to OpenAI or z.ai or generate summaries.
 
 Rules and launch claims live in `data/schedules.json` and survive container recreation. Time zones are independent of the container's clock zone. Nonexistent times during daylight-saving transitions are skipped; repeated local times run once.
+
+## Zoom account settings
+
+Connecting a Zoom account is optional. Register a separate Zoom account specifically
+for the bot and use that account’s email and password here, rather than your personal
+credentials. Signing up is straightforward. An authenticated session may improve the
+bot’s chances of passing Zoom’s checks and joining meetings, but does not guarantee
+admission. Without a connected account, the bot joins as a guest.
+
+Open **Settings → Zoom account**, enter the bot account’s email and password, and click
+**Connect**. The application attempts sign-in and confirms access to the account
+profile before showing **Connected**. Connecting does not join or record a meeting.
+The password is used only for that attempt and is not saved. Authentication does
+not guarantee meeting admission: Zoom and the meeting host can still refuse entry.
+
+If Zoom requests a verification code, CAPTCHA, SSO, or another manual step, choose
+**Continue in browser**. The interactive view shows the browser running on your
+server, including when Docker runs on a remote VM. Click the image to focus a field
+and type, or click a field and use **Replace field** or **Clear field**. The replacement control replaces its contents instead of appending. A separate browser on your own computer
+cannot authorize the container. Closing this view leaves sign-in pending;
+**Cancel sign-in** ends it. Pending sign-in expires after fifteen minutes.
+
+**Check connection** verifies the saved session without entering a meeting.
+**Reconnect** starts a new sign-in; **Disconnect** removes the saved account.
+An expired session requires reconnecting instead of silently joining as a guest.
+Disconnecting or reconnecting does not change a recording already in progress.
+With no connected account, the bot uses the original guest flow.
+
+The verified session is encrypted in `data/settings/api-keys.json` using the
+existing `data/secrets/master.key`. Preserve both through the `/data` volume and
+back them up together. The session survives container restart/recreation when this
+volume is retained, but Zoom controls its expiration and may require another sign-in.
+No password, VNC port, or Chromium debugging port is exposed by this feature.
+On a remote server, use HTTPS or the SSH tunnel described below for application access.
+
+Each meeting's **Bot name** is applied in pre-join when possible. The bot also
+attempts in-meeting renaming if necessary. If Zoom prevents or cannot confirm the
+change, the recording shows a warning that the account name may remain visible.
+The global Zoom account name is never changed. Explicit bot prohibitions stop
+connection retries; they are not reported as a proven requirement to use RTMS.
 
 ## Deepgram settings
 
@@ -182,6 +223,6 @@ npm run build
 
 ## Connection retries
 
-Network/browser connection failures and the observed Zoom browser bot block are retried within one meeting session, with four attempts maximum: immediately, then 10 seconds after the first failure, 10 seconds after the second, and 60 seconds after the third. Each failed browser is closed before the next attempt. **Stop recording** cancels connection and pending retries. Recording failures never trigger an automatic rejoin.
+Transient network/browser connection failures are retried within one meeting session, with four attempts maximum: immediately, then 10 seconds after the first failure, 10 seconds after the second, and 60 seconds after the third. Each failed browser is closed before the next attempt. **Stop recording** cancels connection and pending retries. Recording failures never trigger an automatic rejoin.
 
-Explicit host rejection, ended meetings, authentication/passcode requirements, and admission waiting timeouts are not retried. New meeting cards show an expandable **Attempts: N/4** block with timestamps, outcomes, and detailed errors. Any failed attempt keeps this block red even after recovery. History is saved in `session.json`, with link passwords and bearer tokens redacted. Older sessions do not receive invented history. Restarting the application marks unfinished sessions interrupted rather than automatically rejoining.
+Explicit browser bot prohibitions, host rejection, ended meetings, authentication/passcode requirements, and admission waiting timeouts are not retried. New meeting cards show an expandable **Attempts: N/4** block with timestamps, outcomes, and detailed errors. Any failed attempt keeps this block red even after recovery. History is saved in `session.json`, with link passwords and bearer tokens redacted. Older sessions do not receive invented history. Restarting the application marks unfinished sessions interrupted rather than automatically rejoining.

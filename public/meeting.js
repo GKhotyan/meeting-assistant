@@ -140,7 +140,7 @@ window.MeetingView = (() => {
         element('transcription-language').value = state.options.language;
         element('transcription-diarize').checked = state.options.diarize;
       }
-      element('meeting-error').textContent = '';
+      element('meeting-error').textContent = session.nameWarning || '';
       render();
       if (first && state.options?.audioFileId && [...element('transcription-file').options].some(option => option.value === state.options.audioFileId)) {
         element('transcription-file').value = state.options.audioFileId; player(state.options.audioFileId);

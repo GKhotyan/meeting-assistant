@@ -9,6 +9,7 @@
 <script defer src="/schedule-summary.js"></script>
 <script defer src="/app.js"></script>
 <script defer src="/ai-settings.js"></script>
+<script defer src="/zoom-settings.js"></script>
 </head>
 <body>
 <a class="skip-link" href="#page-title">Skip to content</a>
@@ -107,6 +108,16 @@
   <section id="panel-settings" role="tabpanel" aria-labelledby="tab-settings" hidden>
     <h2>Recording preferences</h2><p class="muted">Defaults for your next meeting. Changes do not affect a recording in progress.</p>
     <form id="settings-form" class="settings-form"><label>Bot name<input id="settings-bot" required maxlength="100" /></label><label>Default recording mode<select id="settings-mode"><option value="video">Full video</option><option value="screenshots">Screenshots every 15 seconds</option><option value="audio">Audio only</option></select></label><p class="muted">Audio is recorded in every mode. Scheduled meetings use their own recording mode and bot name.</p><button type="submit">Save settings</button></form>
+    <form id="zoom-form" class="settings-form integration-settings" aria-labelledby="zoom-title">
+      <div class="zoom-field-heading"><h2 id="zoom-title">Zoom account <span class="muted">Optional</span></h2><span class="field-help"><button class="field-help-button" type="button" aria-label="About the bot Zoom account" aria-describedby="zoom-account-help">?</button><span class="field-help-tooltip" id="zoom-account-help" role="tooltip">Use the email and password of a separate Zoom account registered specifically for your bot. Signing up is straightforward. Connecting an account is optional, but may improve the bot’s chances of passing Zoom’s checks and joining meetings. It does not guarantee admission.</span></span></div>
+      <p class="muted">Connect an account for future meetings, or leave disconnected to join as a guest. Each meeting keeps its own bot name when Zoom permits it.</p>
+      <p id="zoom-status" role="status" aria-live="polite">Loading Zoom account…</p>
+      <label for="zoom-email">Zoom email</label><input id="zoom-email" type="email" maxlength="254" autocomplete="username" required />
+      <label for="zoom-password">Zoom password</label><input id="zoom-password" type="password" maxlength="1024" autocomplete="current-password" required />
+      <p class="muted">Your password is used only for this sign-in. The verified session is encrypted on this server and survives restarts when data storage is preserved. Zoom may require you to reconnect.</p>
+      <div class="actions"><button id="zoom-connect" type="submit" disabled>Connect</button><button id="zoom-check" class="secondary" type="button" hidden>Check connection</button><button id="zoom-disconnect" class="secondary" type="button" hidden>Disconnect</button><button id="zoom-cancel" class="secondary" type="button" hidden>Cancel sign-in</button><button id="zoom-browser-open" class="secondary" type="button" hidden>Continue in browser</button><button id="zoom-reload" class="secondary" type="button" hidden>Retry loading</button></div>
+      <p id="zoom-feedback" role="status" aria-live="polite"></p>
+    </form>
     <form id="deepgram-form" class="settings-form integration-settings" aria-labelledby="deepgram-title">
       <h2 id="deepgram-title">Deepgram</h2>
       <p class="muted">Configure your API key for meeting transcription.</p>
@@ -186,6 +197,15 @@
           page. Video and screenshots capture the Zoom meeting screen.
         </p>
 
+</dialog>
+<dialog id="zoom-browser" aria-labelledby="zoom-browser-title">
+  <div class="zoom-browser-heading"><h2 id="zoom-browser-title">Complete Zoom sign-in</h2><button id="zoom-browser-close" class="secondary" type="button">Close browser view</button></div>
+  <p class="muted">This browser runs on the server. Click the image and use your keyboard to sign in. Verification codes and CAPTCHA must be completed by you. Closing this view keeps sign-in pending until you cancel or it times out.</p>
+  <img id="zoom-browser-image" alt="Remote Zoom sign-in browser. Click to focus and interact." tabindex="0" draggable="false" />
+  <p class="muted">1. Click the email, password, or verification field in the image above. 2. Enter its new value below. 3. Choose Replace field. Clear field removes its current contents. Then click Next or Sign in inside the image.</p>
+  <label for="zoom-browser-text">Replace the selected Zoom field</label>
+  <div class="zoom-browser-paste"><input id="zoom-browser-text" type="password" autocomplete="off" maxlength="4096" /><button id="zoom-browser-send" type="button">Replace field</button><button id="zoom-browser-clear" class="secondary" type="button">Clear field</button></div>
+  <p id="zoom-browser-feedback" role="status" aria-live="polite"></p>
 </dialog>
 </body>
 </html>

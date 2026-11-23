@@ -32,6 +32,7 @@ export interface Session {
   summaryPrompt?: string;
   summaryPromptSource?: "default" | "custom";
   botName: string;
+  nameWarning?: string;
   recordingMode?: RecordingMode;
   createdAt: string;
   status: Status;

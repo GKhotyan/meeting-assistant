@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { mkdirSync, openSync, closeSync } from "node:fs";
 import { Controller } from "../session/controller";
 import { createApp } from "./app";
+import { ZoomConnection } from "../zoom/connection";
 import { Scheduler } from "../session/schedules";
 const root = process.env.DATA_DIR || join(process.cwd(), "data");
 mkdirSync(root, { recursive: true });
@@ -21,11 +22,13 @@ const controller = new Controller(root, (dir) => {
   }
 });
 const scheduler = new Scheduler(root, controller);
+const zoom = new ZoomConnection(root);
 const server = createApp(controller, {
   password: process.env.APP_PASSWORD,
   publicOrigin: process.env.PUBLIC_ORIGIN,
   publicDir: join(process.cwd(), "public"),
   scheduler,
+  zoom,
 });
 server.listen(Number(process.env.PORT || 8088), host, () => {
   scheduler.start();
@@ -38,6 +41,7 @@ async function shutdown() {
   if (stopping) return;
   stopping = true;
   server.close();
+  await zoom.close();
   await scheduler.stop();
   await controller.shutdown();
   process.exit(0);

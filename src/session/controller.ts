@@ -1,3 +1,4 @@
+import { ZoomSettings } from "../integrations/zoom-settings";
 import {
   mkdirSync,
   existsSync,
@@ -170,6 +171,8 @@ export class Controller {
     const input = validateInput({ ...raw, recordingMode: raw?.recordingMode ?? this.config.recordingMode });
     if (this.active)
       throw new AppError(409, "A meeting is already running. Stop it first.");
+    const zoomSettings = new ZoomSettings(this.root);
+    const zoomState = zoomSettings.session();
     const s: Session = {
       id: randomUUID(),
       meetingName: input.meetingName!,
@@ -202,6 +205,13 @@ export class Controller {
     this.active = active;
     worker.on("message", (m: any) => {
       if (active.done) return;
+      if (m?.type === "zoom_auth_expired") {
+        try { if (zoomState && JSON.stringify(zoomSettings.session()) === JSON.stringify(zoomState)) zoomSettings.markExpired(); } catch {}
+        return;
+      }
+      if (m?.type === "name_warning" && typeof m.detail === "string") {
+        s.nameWarning = redact(m.detail); this.save(s); return;
+      }
       if (m?.type === "attempts") {
         const attempts = attemptSnapshot(m.attempts);
         if (!attempts) return;
@@ -254,7 +264,7 @@ export class Controller {
       this.save(s);
       worker.kill("SIGTERM");
     });
-    worker.send({ type: "start", input, sessionId: s.id, sessionDir: dir });
+    worker.send({ type: "start", input, sessionId: s.id, sessionDir: dir, zoomState });
     return structuredClone(s);
   }
   async stopSession(id: string) {

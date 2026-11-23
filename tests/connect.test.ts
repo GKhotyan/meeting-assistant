@@ -20,15 +20,14 @@ function fixture(errors: unknown[] = []) {
 }
 const block = () => new AdmissionError("denial", "[Zoom Web] zoom_requires_rtms: automated bots aren't allowed");
 
-test("four blocked attempts close each browser before 10s, 10s, 60s delays and then fail", async () => {
+test("explicit bot prohibition fails once without retrying a platform denial", async () => {
   const f = fixture([block(), block(), block(), block()]);
   await assert.rejects(connectWithRetries(f.options), /zoom_requires_rtms/);
-  assert.equal(f.opened(), 4);
-  assert.deepEqual(f.delays, [10000, 10000, 60000]);
-  assert.deepEqual(f.order.slice(0, 5), ["open1", "connect1", "close1", "wait10000", "open2"]);
-  assert.deepEqual(f.events.at(-1).attempts.map((a: any) => a.outcome), ["failed", "failed", "failed", "failed"]);
+  assert.equal(f.opened(), 1);
+  assert.deepEqual(f.delays, []);
+  assert.deepEqual(f.order, ["open1", "connect1", "close1"]);
+  assert.deepEqual(f.events.at(-1).attempts.map((a: any) => a.outcome), ["failed"]);
   assert.equal(f.events.at(-1).nextRetryAt, undefined);
-  assert.equal(f.events.find(e => e.nextRetryAt).nextRetryAt, "1970-01-01T00:00:11.000Z");
 });
 test("successful recovery returns live browser with redacted failure history and no pending retry", async () => {
   const f = fixture([new Error("net::ERR_CONNECTION_RESET https://zoom.us/?pwd=secret")]);
@@ -61,7 +60,7 @@ test("browser launch failure can recover without closing nonexistent resource", 
   assert.equal(f.order.some(s => s.startsWith("close")), false);
 });
 test("stop during retry delay prevents all further attempts", async () => {
-  const f = fixture([block()]);
+  const f = fixture([Error("net::ERR_CONNECTION_RESET")]);
   f.options.wait = async () => { f.abort.abort(); };
   await assert.rejects(connectWithRetries(f.options), { name: "AbortError" });
   assert.equal(f.opened(), 1);
@@ -96,7 +95,7 @@ test("cleanup failure stops retries to avoid overlapping browsers", async () => 
   assert.match(f.events.at(-1).attempts[0].error, /browser close failed/);
 });
 test("default delay is abortable", async () => {
-  const f = fixture([block()]);
+  const f = fixture([Error("net::ERR_CONNECTION_RESET")]);
   const { wait, ...options } = f.options;
   options.onChange = state => { f.events.push(state); if (state.nextRetryAt) setImmediate(() => f.abort.abort()); };
   await assert.rejects(connectWithRetries(options), { name: "AbortError" });
