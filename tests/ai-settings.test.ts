@@ -72,3 +72,18 @@ test('damaged AI preferences fail closed without deleting provider credentials',
  assert.throws(()=>ai.remove('openai'),/damaged/i);
  assert.equal(readFileSync(join(dir,'settings/api-keys.json'),'utf8'),before);
 });
+
+test('editing provider settings does not switch active provider and switching preserves both saved configurations', () => {
+ const dir=root(),ai=new AISettings(dir);
+ ai.save({provider:'zai',model:'glm-4.7',apiKey:'z-secret'});
+ ai.save({provider:'openai',model:'gpt-5',effort:'high',apiKey:'o-secret',activate:false});
+ assert.equal(ai.metadata().provider,'zai');
+ const before=ai.metadata().providers;
+ assert.equal(ai.select('openai').provider,'openai');
+ assert.deepEqual(ai.metadata().providers,before);
+ assert.equal(ai.key('openai'),'o-secret');assert.equal(ai.key('zai'),'z-secret');
+ assert.equal(new AISettings(dir).metadata().provider,'openai');
+ for(const activate of [null,'false',1])assert.throws(()=>ai.save({provider:'zai',model:'glm-4.7',activate}));
+ assert.throws(()=>ai.select('invalid' as any));
+ assert.equal(ai.metadata().provider,'openai');
+});

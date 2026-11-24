@@ -130,6 +130,12 @@ function render(sessions) {
     transcriptStatus.href = "#meeting/" + encodeURIComponent(s.id) + "/transcription";
     transcriptStatus.textContent = { idle: "No transcript", processing: "Transcribing…", completed: "Transcript ready", failed: "Transcription failed", interrupted: "Transcription interrupted" }[transcription] || "No transcript";
     card.append(transcriptStatus);
+    const summaryStatus = document.createElement("a");
+    const summaryState = s.summary?.status || "idle";
+    summaryStatus.className = "transcription-link " + summaryState;
+    summaryStatus.href = "#meeting/" + encodeURIComponent(s.id) + "/summary";
+    summaryStatus.textContent = s.summary?.stale ? "Summary needs updating" : { idle: "No summary", processing: "Generating summary…", completed: "Summary ready", failed: "Summary failed", interrupted: "Summary interrupted" }[summaryState] || "No summary";
+    card.append(summaryStatus);
     if (Array.isArray(s.attempts)) {
       const details = document.createElement("details");
       details.className = "attempts" + (s.attempts.some(attempt => attempt.outcome === "failed") ? " has-failures" : "");

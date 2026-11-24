@@ -40,7 +40,13 @@ substitute("src/worker/browser.ts", {
   },
 });
 const { AdmissionError } = require(join(root, "vendor/vexa/join/shared/admission.ts"));
+substitute('src/zoom/login-browser.ts',{createLoginBrowser:async()=>({
+  async start(){probe('sign-in');},async verify(){return scenario!=='auth-challenge';},
+  async state(){return {cookies:[{name:'cred',value:'fresh',domain:'.zoom.us',path:'/',expires:-1,httpOnly:true,secure:true,sameSite:'Lax'}],origins:[]};},
+  async close(){probe('login-closed');}
+})});
 substitute("vendor/vexa/join/zoom/join.ts", { joinZoomMeeting: async page => {
+  if(scenario==='auth-rejected'||(['auth-recover','auth-challenge'].includes(scenario)&&page.number===1))throw new AdmissionError('auth_session_missing','auth_required');
   if (["retry", "screenshot-failure"].includes(scenario) && page.number === 1) throw Error("net::ERR_CONNECTION_RESET");
   if (scenario === "stop-delay") throw Error("net::ERR_CONNECTION_RESET");
   if (scenario === "crash-connect" && page.number === 1) { page.emit("crash"); return new Promise(() => {}); }

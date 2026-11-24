@@ -55,11 +55,21 @@ export class AISettings {
     key(provider: AIProvider) { const value = this.store.read()[aiProvider(provider)]; return value === undefined || value === '' ? '' : cleanKey(value); }
     save(input: unknown) {
         const value = object(input), provider = aiProvider(value.provider), options = preferences(value, provider);
+        if (value.activate !== undefined && typeof value.activate !== 'boolean')
+            throw new AppError(400, 'Invalid provider activation preference.');
         const apiKey = value.apiKey === undefined || value.apiKey === '' ? undefined : cleanKey(value.apiKey);
         const data = this.store.read(), config = this.configuration(data);
-        config.provider = provider;
+        if (value.activate !== false) config.provider = provider;
         config.providers[provider] = options;
         const next = { ...data, ai: config, ...(apiKey === undefined ? {} : { [provider]: apiKey }) };
+        this.store.write(next);
+        return this.metadataFor(next);
+    }
+    select(provider: AIProvider) {
+        provider = aiProvider(provider);
+        const data = this.store.read(), config = this.configuration(data);
+        config.provider = provider;
+        const next = { ...data, ai: config };
         this.store.write(next);
         return this.metadataFor(next);
     }

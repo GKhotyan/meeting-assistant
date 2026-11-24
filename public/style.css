@@ -938,7 +938,17 @@ footer {
 /* Meeting detail and transcript */
 .meeting-title { color:var(--ink); font-size:14px; font-weight:700; text-decoration:none; }
 .meeting-title:hover { color:var(--accent); text-decoration:underline; }
-.meeting-card { cursor:pointer; }
+#sessions, #schedules { display: grid; gap: 16px; margin-top: 18px; }
+#sessions > .meeting-card, #schedules > .schedule-card { padding: 20px; border: 1px solid #dce3ee; border-radius: 10px; background: #fbfcfe; box-shadow: 0 1px 3px #202c4005; transition: border-color .15s, box-shadow .15s; }
+#sessions > .meeting-card { cursor: pointer; }
+#sessions > .meeting-card:hover { border-color: #bbc9df; box-shadow: 0 3px 10px #202c400a; }
+#sessions > .meeting-card:focus-within, #schedules > .schedule-card:focus-within { border-color: #9bb5ed; }
+#sessions > .meeting-card .meeting-title, #schedules > .schedule-card > strong { display: inline-block; max-width: calc(100% - 110px); overflow-wrap: anywhere; vertical-align: top; font-size: 15px; }
+@media (max-width: 520px) {
+  #sessions, #schedules { gap: 14px; }
+  #sessions > .meeting-card, #schedules > .schedule-card { padding: 16px; }
+  #sessions > .meeting-card .meeting-title, #schedules > .schedule-card > strong { max-width: calc(100% - 85px); font-size: 14px; }
+}
 .transcription-link { display:table; font-size:12px; color:#687b98; margin:10px 0; text-decoration:none; }
 .transcription-link:hover { text-decoration:underline; }
 .transcription-link.completed { color:#28836a; }
@@ -1018,3 +1028,60 @@ footer {
 .field-help-button:hover, .field-help-button:focus-visible { background: #e8edff; color: #2448bd; }
 .field-help-tooltip { position: absolute; z-index: 20; top: calc(100% + .5rem); left: -5rem; width: min(320px, 72vw); padding: .8rem 1rem; border: 1px solid #dbe3ef; border-radius: .6rem; background: #fff; color: #334155; font-size: .85rem; font-weight: 400; line-height: 1.5; box-shadow: 0 8px 24px #0f172a24; visibility: hidden; opacity: 0; }
 .field-help:hover .field-help-tooltip, .field-help:focus-within .field-help-tooltip { visibility: visible; opacity: 1; }
+
+/* Saved summaries use the same reading width and hierarchy as transcripts. */
+.summary-result { max-width: 850px; margin-top: 24px; line-height: 1.75; overflow-wrap: anywhere; }
+.summary-result h2, .summary-result h3, .summary-result h4 { margin: 28px 0 12px; line-height: 1.35; }
+.summary-result p { white-space: pre-wrap; margin: 12px 0; }
+.summary-result ul { padding-left: 24px; }
+.summary-result li { margin: 6px 0; white-space: pre-wrap; }
+.summary-notice { padding: 14px 16px; border-left: 3px solid var(--accent); background: var(--surface); line-height: 1.6; }
+.summary-used-instructions { margin-top: 20px; border: 1px solid #dce3ee; border-radius: 10px; background: #f7f9fc; overflow: hidden; }
+.summary-used-instructions > summary { cursor: pointer; padding: 14px 16px; background: #f1f4f9; color: #34435a; font-size: 13px; font-weight: 600; line-height: 1.5; }
+.summary-used-instructions > summary::marker { color: #687b98; }
+.summary-used-instructions > summary:hover { background: #eaf0f8; }
+.summary-used-instructions > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.summary-used-instructions[open] > summary { border-bottom: 1px solid #dce3ee; }
+.summary-used-instructions > pre { margin: 0; padding: 16px; max-height: 340px; overflow: auto; font-family: inherit; font-size: 12px; line-height: 1.7; color: #4a5870; white-space: pre-wrap; overflow-wrap: anywhere; scrollbar-width: thin; scrollbar-color: #c2ccdb #f7f9fc; }
+.summary-used-instructions > pre:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+@media (max-width: 520px) {
+  .summary-used-instructions > summary { padding: 12px 14px; }
+  .summary-used-instructions > pre { padding: 14px; max-height: 280px; }
+}
+.summary-controls { flex-wrap: wrap; }
+.clipboard-buffer { position: fixed; top: 0; left: -9999px; }
+
+@media (max-width: 520px) {
+  .meeting-tabs { gap: 4px; }
+  .meeting-tabs button { min-width: 0; padding: 10px 12px; flex: 1; }
+}
+
+.ai-settings { margin-top: 28px; }
+.ai-selection { max-width: 460px; }
+.ai-selection select { flex: 1; min-width: 120px; }
+.ai-selection .actions { align-items: center; flex-wrap: wrap; }
+.ai-provider-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; margin-top: 24px; }
+.ai-provider-card { border: 1px solid var(--line); border-radius: 12px; padding: 24px; min-width: 0; }
+.ai-provider-card h3 { margin-top: 0; font-size: 18px; }
+.ai-provider-card .actions { flex-wrap: wrap; }
+@media (max-width: 1000px) { .ai-provider-grid { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 520px) {
+  .ai-provider-card { padding: 16px; }
+  .field-help-tooltip { left: auto; right: -5rem; width: min(260px, 65vw); }
+}
+
+#summary-edit-prompt { margin: 14px 0 4px; }
+#summary-prompt-editor { inset: 0; margin: auto; width: min(900px, calc(100vw - 32px)); max-width: none; height: fit-content; max-height: 90dvh; padding: 28px; border-radius: 14px; overflow: auto; }
+#summary-prompt-draft { display: block; width: 100%; height: clamp(180px, 32dvh, 360px); min-height: 160px; padding: 12px; border: 1px solid var(--line); border-radius: 8px; font: inherit; line-height: 1.6; color: var(--ink); resize: vertical; }
+@media (max-width: 520px) { #summary-prompt-editor { padding: 18px; } }
+
+/* Settings groups follow the same card boundaries as meetings and schedules. */
+#panel-settings { display: grid; gap: 20px; padding: 0; border: 0; background: transparent; }
+#panel-settings > .settings-card { min-width: 0; max-width: none; margin: 0; padding: 24px; border: 1px solid #dce3ee; border-radius: 10px; background: #fbfcfe; box-shadow: 0 1px 3px #202c4005; }
+#panel-settings > .settings-card > input, #panel-settings > .settings-card > .key-entry { max-width: 460px; }
+#panel-settings > .settings-card > p { max-width: 760px; }
+#panel-settings .ai-provider-card { background: #fff; border-color: #dce3ee; }
+@media (max-width: 520px) {
+  #panel-settings { gap: 16px; }
+  #panel-settings > .settings-card { padding: 20px 16px; }
+}

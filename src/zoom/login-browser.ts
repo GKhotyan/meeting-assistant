@@ -45,10 +45,15 @@ export async function createLoginBrowser(state?:ZoomState):Promise<LoginDriver> 
       async state(){const s=await context.storageState();return {cookies:s.cookies.filter(c=>zoomHost(c.domain.replace(/^\./,''))),origins:s.origins.filter(o=>zoomHost(new URL(o.origin).hostname))};},
       frame:()=>page().screenshot({type:'jpeg',quality:70,timeout:5000}),
       async input(a:BrowserInput) {
+        const credentialsChanged=(a.type==='text'||a.type==='key') && await page().evaluate(()=>{
+          const field=document.activeElement as HTMLInputElement|null;
+          return field?.tagName==='INPUT' && (field.type==='password'||field.type==='email'||field.name==='email'||field.id==='email');
+        });
         if(a.type==='click')await page().mouse.click(a.x,a.y);
         else if(a.type==='text')await page().keyboard.insertText(a.text);
         else if(a.type==='key')await page().keyboard.press(a.key);
         else await page().mouse.wheel(0,a.deltaY);
+        return {credentialsChanged};
       },
       async close(){if(closed)return;closed=true;await context.close().catch(()=>{});display?.process.kill();rmSync(profile,{recursive:true,force:true});},
     };

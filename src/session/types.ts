@@ -29,6 +29,7 @@ export interface ConnectionAttempt {
 export interface Session {
   id: string;
   meetingName: string;
+  scheduleId?: string;
   summaryPrompt?: string;
   summaryPromptSource?: "default" | "custom";
   botName: string;

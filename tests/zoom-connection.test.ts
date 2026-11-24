@@ -24,6 +24,7 @@ test('login challenges remain interactive; verified login alone persists the ses
   d.auth=true; await tick();
   assert.equal(service.metadata().status,'connected'); assert.equal(d.closed,true);
   assert.deepEqual(new ZoomSettings(dir).session(),state);
+  assert.equal(new ZoomSettings(dir).recoveryAccount()?.password,'secret');
   assert.equal(JSON.stringify(service.metadata()).includes('secret'),false); await service.close();
 });
 test('cancelled login completion cannot replace the account', async () => {
@@ -78,4 +79,19 @@ test('requesting a frame while disconnected does not block the next sign-in brow
   await assert.rejects(()=>service.frame(),/no active/i);
   service.connect({email:'bot@example.com',password:'secret'});await tick();
   assert.equal((await service.frame()).toString(),'frame');await service.close();
+});
+test('a password rejected before interactive correction is not saved for automatic sign-in',async()=>{
+  const dir=root(),d=driver(),service=new ZoomConnection(dir,async()=>d,{pollMs:5});
+  d.failure='Zoom did not accept the credentials.';
+  service.connect({email:'bot@example.com',password:'secret'});await tick();
+  d.auth=true;await tick();
+  assert.equal(service.metadata().status,'connected');
+  assert.equal(new ZoomSettings(dir).recoveryAccount(),undefined);await service.close();
+});
+test('editing a credential field in the login browser discards the original submitted password',async()=>{
+  const dir=root(),d=driver(),service=new ZoomConnection(dir,async()=>d,{pollMs:5});
+  d.input=async()=>({credentialsChanged:true});
+  service.connect({email:'bot@example.com',password:'secret'});await tick();
+  await service.input({type:'text',text:'corrected-password'});d.auth=true;await tick();
+  assert.equal(new ZoomSettings(dir).recoveryAccount(),undefined);await service.close();
 });

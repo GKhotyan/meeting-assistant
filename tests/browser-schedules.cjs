@@ -55,7 +55,7 @@ const { createApp } = require("../dist/src/server/app");
     await page.getByRole('button', {name:'Insert example',exact:true}).click();
     assert.match(await prompt.inputValue(), /Итоги встречи/);
     await page.getByRole('button', {name:'Expand editor',exact:true}).click();
-    const expanded = page.getByRole('dialog', {name:'Summary instructions',exact:true});
+    const expanded = page.getByRole('dialog', {name:'Summary instructions (prompt)',exact:true});
     await page.screenshot({path:'/tmp/schedule-prompt-desktop.png',fullPage:false});
     await expanded.getByLabel('Summary prompt', {exact:true}).fill('Discard this modal draft');
     await page.keyboard.press('Escape');

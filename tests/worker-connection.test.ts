@@ -2,6 +2,9 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { fork } from "node:child_process";
 import { join } from "node:path";
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { ZoomSettings } from '../src/integrations/zoom-settings';
 async function run(scenario: string, action: (message: any, child: ReturnType<typeof fork>) => void) {
   const child = fork(join(__dirname, "fixtures/worker-connection.cjs"), [], {
     execArgv: ["--require", "tsx/cjs"],
@@ -14,16 +17,45 @@ async function run(scenario: string, action: (message: any, child: ReturnType<ty
     child.on("error", reject);
     child.on("exit", () => resolve());
   });
-  child.on("message", (m: any) => { messages.push(m); action(m, child); });
+  let settings:ZoomSettings|undefined;
+  child.on("message", (m: any) => {
+    messages.push(m);
+    if(m.type==='zoom_recovery_result') {
+      const account=settings?.recoveryAccount();let saved=false;
+      if(account?.revision===m.revision && account && settings) {
+        if(m.zoomState)saved=settings.saveRecovered(account,m.zoomState);
+        else {settings.markExpired();saved=true;}
+      }
+      child.send({type:'zoom_recovery_saved',saved});
+    }
+    action(m, child);
+  });
   const watchdog = setTimeout(() => child.kill("SIGKILL"), 5000);
   try {
-    child.send({ type: "start", input: { meetingUrl: "https://zoom.us/j/12345678901", botName: "Bot", recordingMode: "audio" }, sessionDir: "/tmp", ...(scenario==='authenticated'?{zoomState:{cookies:[],origins:[]}}:{}) });
+    let zoomInput:any=scenario==='authenticated'?{zoomState:{cookies:[],origins:[]}}:{};
+    if(scenario.startsWith('auth-')) {
+      const zoomRoot=mkdtempSync(join(tmpdir(),'worker-zoom-'));settings=new ZoomSettings(zoomRoot);
+      const state:any={cookies:[{name:'cred',value:'old',domain:'.zoom.us',path:'/',expires:-1,httpOnly:true,secure:true,sameSite:'Lax'}],origins:[]};
+      settings.save('bot@example.com',state,'saved-password');
+      if(scenario==='auth-expired')settings.markExpired();
+      zoomInput={zoomRoot,zoomState:scenario==='auth-expired'?undefined:state};
+    }
+    child.send({ type: "start", input: { meetingUrl: "https://zoom.us/j/12345678901", botName: "Bot", recordingMode: "audio" }, sessionDir: "/tmp", ...zoomInput });
     await exit;
     assert.equal(stderr, "");
     assert.ok(messages.some(m => m.type === "done"), "worker must confirm completion instead of timing out");
     return messages;
   } finally { clearTimeout(watchdog); if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL"); }
 }
+for(const scenario of ['auth-recover','auth-expired','auth-rejected','auth-challenge']) test(`real worker handles ${scenario} with one credential submission`,async()=>{
+  const messages=await run(scenario,(m,child)=>{if(m.status==='recording')child.send({type:'stop'});});
+  assert.equal(messages.filter(m=>m.event==='sign-in').length,1);
+  const recovered=['auth-recover','auth-expired'].includes(scenario);
+  assert.equal(messages.some(m=>m.status==='recording'),recovered);
+  assert.equal(messages.filter(m=>m.event==='launching').length,scenario==='auth-expired'?1:scenario==='auth-challenge'?1:2);
+  if(!recovered)assert.match(messages.at(-1).error,/sign-in required|auth_required/);
+  assert.equal(JSON.stringify(messages).includes('saved-password'),false);
+});
 for (const scenario of ["retry", "crash-connect", "screenshot-failure"]) test(`real worker recovers from ${scenario} and records only after admission`, async () => {
   const messages = await run(scenario, (m, child) => {
     if (m.type === "status" && m.status === "recording") child.send({ type: "stop" });
