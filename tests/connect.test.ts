@@ -20,6 +20,21 @@ function fixture(errors: unknown[] = []) {
 }
 const block = () => new AdmissionError("denial", "[Zoom Web] zoom_requires_rtms: automated bots aren't allowed");
 
+test('authentication recovery closes the browser before signing in and retries without delay',async()=>{
+  const f=fixture([new AdmissionError('auth_session_missing','auth_required')]);
+  assert.equal(await connectWithRetries({...f.options,recoverAuthentication:async()=>{f.order.push('reauth');}}),2);
+  assert.deepEqual(f.order,['open1','connect1','close1','reauth','open2','connect2']);
+  assert.deepEqual(f.delays,[]);
+});
+test('authentication recovery is attempted only once and never for platform denial',async()=>{
+  for(const errors of [[new AdmissionError('auth_session_missing','auth_required'),new AdmissionError('auth_session_missing','auth_required')],[block()]]) {
+    const f=fixture(errors);let recovered=0;
+    await assert.rejects(connectWithRetries({...f.options,recoverAuthentication:async()=>{recovered++;}}));
+    assert.equal(recovered,errors.length===2?1:0);
+    assert.equal(f.opened(),errors.length);
+  }
+});
+
 test("explicit bot prohibition fails once without retrying a platform denial", async () => {
   const f = fixture([block(), block(), block(), block()]);
   await assert.rejects(connectWithRetries(f.options), /zoom_requires_rtms/);

@@ -1,12 +1,14 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
+import { summaryPrompt } from "./summary-prompt";
 import { validateInput } from "./controller";
 import type { Controller } from "./controller";
 import { AppError, type RecordingMode } from "./types";
 
 export interface ScheduleInput {
   botName?: string;
+  summaryPrompt?: string;
   name: string;
   meetingUrl: string;
   weekdays: number[]; // ISO weekdays: Monday=1, Sunday=7
@@ -17,6 +19,7 @@ export interface ScheduleInput {
 }
 export interface Schedule extends ScheduleInput {
   botName: string;
+  summaryPrompt: string;
   id: string;
   enabled: boolean;
   nextRunAt?: string;
@@ -64,7 +67,7 @@ export function nextOccurrence(
   throw Error("Could not calculate the next weekly occurrence");
 }
 
-function validate(value: ScheduleInput): ScheduleInput & { enabled: boolean; botName: string } {
+function validate(value: ScheduleInput): ScheduleInput & { enabled: boolean; botName: string; summaryPrompt: string } {
   if (typeof value?.name !== "string" || !value.name.trim() || value.name.trim().length > 100)
     throw new AppError(400, "Meeting name must contain 1 to 100 characters");
   if (!Array.isArray(value.weekdays) || !value.weekdays.length || value.weekdays.length > 7 ||
@@ -81,6 +84,7 @@ function validate(value: ScheduleInput): ScheduleInput & { enabled: boolean; bot
     throw new AppError(400, "Enabled must be true or false");
   const input = validateInput({ meetingUrl: value.meetingUrl, recordingMode: value.recordingMode, botName: value.botName === undefined ? "Engineering Assistant" : value.botName });
   return {
+    summaryPrompt: summaryPrompt(value.summaryPrompt),
     name: value.name.trim(), meetingUrl: input.meetingUrl, botName: input.botName,
     weekdays: [...new Set(value.weekdays)].sort((a, b) => a - b),
     time: value.time, timeZone, recordingMode: input.recordingMode!, enabled: value.enabled ?? true,
@@ -94,9 +98,10 @@ export class Scheduler {
   private file: string;
   constructor(
     root: string,
-    private controller: Pick<Controller, "settings" | "startSession"> | {
+    private controller: {
       settings(): { botName: string };
-      startSession(input: Parameters<Controller["startSession"]>[0]): Promise<{ id: string }>;
+      startSession(input: Parameters<Controller["startSession"]>[0], scheduleId?: string): Promise<{ id: string }>;
+      associateSchedule?(sessionId: string, scheduleId: string): void;
     },
     private now: () => Date = () => new Date(),
   ) {
@@ -105,6 +110,8 @@ export class Scheduler {
     this.rules = existsSync(this.file) ? JSON.parse(readFileSync(this.file, "utf8")) : [];
     for (const rule of this.rules) {
       Object.assign(rule, validate(rule));
+      if (rule.lastRun?.status === "started" && rule.lastRun.sessionId)
+        this.controller.associateSchedule?.(rule.lastRun.sessionId, rule.id);
       if (rule.lastRun?.status === "starting") {
         rule.lastRun.status = "failed";
         rule.lastRun.reason = "Service restarted during launch; automatic retry was skipped.";
@@ -124,11 +131,16 @@ export class Scheduler {
     try { this.save(); } catch (e) { this.rules.pop(); throw e; }
     return structuredClone(rule);
   }
-  update(id: string, input: Partial<ScheduleInput>): Schedule {
+  update(id: string, input: Partial<ScheduleInput> & { expectedSummaryPrompt?: string }): Schedule {
     const index = this.rules.findIndex(r => r.id === id);
     if (index < 0) throw new AppError(404, "Schedule not found");
     if (!input || typeof input !== "object" || Array.isArray(input)) throw new AppError(400, "Invalid schedule");
     const old = this.rules[index];
+    if (input.expectedSummaryPrompt !== undefined) {
+      if (typeof input.expectedSummaryPrompt !== "string") throw new AppError(400, "Invalid expected summary prompt.");
+      if (input.expectedSummaryPrompt !== old.summaryPrompt)
+        throw new AppError(409, "The shared prompt changed elsewhere. Cancel and reopen the editor before saving.");
+    }
     const value = validate({ ...old, ...input });
     const changed = !old.enabled || old.time !== value.time || old.timeZone !== value.timeZone ||
       JSON.stringify(old.weekdays) !== JSON.stringify(value.weekdays);
@@ -170,7 +182,7 @@ export class Scheduler {
       if (missed) continue;
       try {
         const session = await this.controller.startSession({ meetingUrl: rule.meetingUrl,
-          meetingName: rule.name, botName: rule.botName, recordingMode: rule.recordingMode });
+          meetingName: rule.name, botName: rule.botName, recordingMode: rule.recordingMode, summaryPrompt: rule.summaryPrompt }, rule.id);
         rule.lastRun.status = "started";
         rule.lastRun.sessionId = session.id;
       } catch (e) {

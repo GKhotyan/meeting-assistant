@@ -12,6 +12,7 @@ import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { EventEmitter } from "node:events";
 import { Session, Status, StartInput, AppError, terminal, RecordingMode, ConnectionAttempt } from "./types";
+import { summaryPrompt, DEFAULT_SUMMARY_PROMPT } from "./summary-prompt";
 import { redact } from "./security";
 export interface Worker extends EventEmitter {
   send(message: unknown): unknown;
@@ -52,7 +53,7 @@ export function validateInput(input: StartInput): StartInput {
       400,
       "Use a standard HTTPS meeting link on zoom.us",
     );
-  return { meetingUrl: url.href, botName: input.botName.trim(), meetingName: meetingName.trim(), recordingMode: recordingMode(input.recordingMode) };
+  return { meetingUrl: url.href, botName: input.botName.trim(), meetingName: meetingName.trim(), recordingMode: recordingMode(input.recordingMode), summaryPrompt: summaryPrompt(input.summaryPrompt) };
 }
 function folderPrefix(name: string) {
   const safe = name.normalize("NFKC").replace(/[^\p{L}\p{M}\p{N}_-]+/gu, "_").replace(/^_+|_+$/g, "") || "Meeting";
@@ -166,15 +167,26 @@ export class Controller {
     this.sessions.delete(id);
     this.recordingDirectories.delete(id);
   }
-  async startSession(raw: StartInput) {
+  associateSchedule(id: string, scheduleId: string) {
+    const session = this.sessions.get(id);
+    if (!session || session.scheduleId) return;
+    if (!/^[a-zA-Z0-9-]+$/.test(scheduleId)) throw new AppError(400, "Invalid schedule identity.");
+    const linked = { ...session, scheduleId };
+    this.save(linked);
+    session.scheduleId = scheduleId;
+  }
+  async startSession(raw: StartInput, scheduleId?: string) {
     const input = validateInput({ ...raw, recordingMode: raw?.recordingMode ?? this.config.recordingMode });
     if (this.active)
       throw new AppError(409, "A meeting is already running. Stop it first.");
     const zoomSettings = new ZoomSettings(this.root);
-    const zoomState = zoomSettings.session();
+    const zoomState = zoomSettings.connectionSession();
     const s: Session = {
       id: randomUUID(),
       meetingName: input.meetingName!,
+      ...(scheduleId ? { scheduleId } : {}),
+      summaryPrompt: input.summaryPrompt || DEFAULT_SUMMARY_PROMPT,
+      summaryPromptSource: input.summaryPrompt ? "custom" : "default",
       botName: input.botName,
       recordingMode: input.recordingMode,
       createdAt: new Date().toISOString(),
@@ -202,8 +214,23 @@ export class Controller {
     this.active = active;
     worker.on("message", (m: any) => {
       if (active.done) return;
+      if (m?.type === 'zoom_recovery_result') {
+        let saved = false;
+        // Credential writes belong to this process, so revision checks and writes
+        // cannot interleave with Settings disconnect or account replacement.
+        try {
+          const account = zoomSettings.recoveryAccount();
+          if (s.status !== 'stopping' && account?.revision && account.revision === m.revision) {
+            if (m.zoomState) saved = zoomSettings.saveRecovered(account, m.zoomState);
+            else { zoomSettings.markExpired(); saved = true; }
+          }
+        } catch {}
+        worker.send({ type: 'zoom_recovery_saved', saved });
+        return;
+      }
       if (m?.type === "zoom_auth_expired") {
-        try { if (zoomState && JSON.stringify(zoomSettings.session()) === JSON.stringify(zoomState)) zoomSettings.markExpired(); } catch {}
+        const failedState = m.zoomState ?? zoomState;
+        try { if (failedState && JSON.stringify(zoomSettings.session()) === JSON.stringify(failedState)) zoomSettings.markExpired(); } catch {}
         return;
       }
       if (m?.type === "name_warning" && typeof m.detail === "string") {
@@ -261,7 +288,7 @@ export class Controller {
       this.save(s);
       worker.kill("SIGTERM");
     });
-    worker.send({ type: "start", input, sessionId: s.id, sessionDir: dir, zoomState });
+    worker.send({ type: "start", input, sessionId: s.id, sessionDir: dir, zoomState, ...(zoomSettings.recoveryAccount() ? { zoomRoot: this.root } : {}) });
     return structuredClone(s);
   }
   async stopSession(id: string) {

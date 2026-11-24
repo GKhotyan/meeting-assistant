@@ -162,3 +162,48 @@ test("old schedules without a bot name load with Engineering Assistant", async (
   await restored.tick();
   assert.equal(a.calls[0].botName, "Engineering Assistant");
 });
+
+test('schedule summary prompts persist unchanged, validate limits and only affect future launches', async () => {
+ const a=setup();
+ const prompt='  Итоги встречи\nDecisions and action items <team>  ';
+ const created=a.scheduler.create({...rule,summaryPrompt:prompt});
+ assert.equal(created.summaryPrompt,prompt);
+ const restored=new Scheduler(a.root,a.controller,a.now);
+ assert.equal(restored.list()[0].summaryPrompt,prompt);
+ for(const summaryPrompt of [null,42,{},'x'.repeat(8001)])assert.throws(()=>restored.update(created.id,{summaryPrompt} as any),(e:any)=>e.status===400);
+ assert.equal(restored.list()[0].summaryPrompt,prompt);
+ a.setTime('2026-10-26T07:00:10Z');await restored.tick();
+ assert.equal(a.calls[0].summaryPrompt,prompt);
+ restored.update(created.id,{summaryPrompt:'Updated instructions'});
+ assert.equal(a.calls[0].summaryPrompt,prompt);
+ a.setTime('2026-10-27T07:00:10Z');await restored.tick();
+ assert.equal(a.calls[1].summaryPrompt,'Updated instructions');
+ restored.update(created.id,{summaryPrompt:'  \n '});
+ assert.equal(restored.list()[0].summaryPrompt,'');
+});
+test('old schedules without summary instructions use the default path', async () => {
+ const a=setup();a.scheduler.create(rule);
+ const rows=JSON.parse(readFileSync(join(a.root,'schedules.json'),'utf8'));delete rows[0].summaryPrompt;
+ writeFileSync(join(a.root,'schedules.json'),JSON.stringify(rows));
+ const restored=new Scheduler(a.root,a.controller,a.now);
+ assert.equal(restored.list()[0].summaryPrompt,'');
+ a.setTime('2026-10-26T07:00:10Z');await restored.tick();assert.equal(a.calls[0].summaryPrompt,'');
+});
+
+test('scheduled launches carry stable schedule identity and restore legacy identity from launch history',async()=>{
+ const root=mkdtempSync(join(tmpdir(),'schedule-identity-'));let seenId:string|undefined;const links:any[]=[];
+ const controller={settings:()=>({botName:'Notes'}),startSession:async(_input:any,scheduleId?:string)=>{seenId=scheduleId;return{id:'old-session'};},associateSchedule:(id:string,scheduleId:string)=>links.push({id,scheduleId})};
+ const scheduler=new Scheduler(root,controller,()=>new Date('2026-10-26T06:59:00Z'));const scheduled=scheduler.create(rule);
+ const restored=new Scheduler(root,controller,()=>new Date('2026-10-26T07:00:10Z'));await restored.tick();assert.equal(seenId,scheduled.id);
+ new Scheduler(root,controller);assert.deepEqual(links,[{id:'old-session',scheduleId:scheduled.id}]);
+});
+
+test('shared prompt editor refuses stale updates without overwriting concurrent schedule changes',()=>{
+ const a=setup(),created=a.scheduler.create({...rule,summaryPrompt:'Original'});
+ a.scheduler.update(created.id,{summaryPrompt:'Changed elsewhere'});
+ assert.throws(()=>a.scheduler.update(created.id,{summaryPrompt:'My draft',expectedSummaryPrompt:'Original'} as any),(e:any)=>e.status===409);
+ assert.equal(a.scheduler.list()[0].summaryPrompt,'Changed elsewhere');
+ const updated=a.scheduler.update(created.id,{summaryPrompt:'My draft',expectedSummaryPrompt:'Changed elsewhere'} as any);
+ assert.equal(updated.summaryPrompt,'My draft');assert.equal(updated.name,rule.name);
+ assert.throws(()=>a.scheduler.update(created.id,{summaryPrompt:'Other',expectedSummaryPrompt:42} as any),(e:any)=>e.status===400);
+});

@@ -4,6 +4,8 @@ import { maximizeZoomWindow } from "./window";
 import { watchBrowser } from "./lifecycle";
 import { readZoomParticipantCount, watchEmptyMeeting } from "./empty-meeting";
 import { launchZoomBrowser } from "./browser";
+import { ZoomSettings, RecoveryAccount, ZoomState } from '../integrations/zoom-settings';
+import { recoverZoomSession } from '../zoom/recovery';
 
 import type { BrowserContext, Page } from "playwright";
 import { joinZoomMeeting } from "../../vendor/vexa/join/zoom/join";
@@ -42,6 +44,19 @@ let files: RecordingFile[] = [];
 const send = (m: unknown) => {
   if (process.connected) process.send?.(m);
 };
+function persistRecovery(account: RecoveryAccount, zoomState?: ZoomState): Promise<boolean> {
+  const signal = connectionAbort.signal;
+  signal.throwIfAborted();
+  return new Promise((resolve, reject) => {
+    const cleanup = () => { clearTimeout(timer); process.off('message', reply); signal.removeEventListener('abort', aborted); };
+    const reply = (m: any) => { if (m?.type === 'zoom_recovery_saved') { cleanup(); resolve(m.saved === true); } };
+    const aborted = () => { cleanup(); reject(new DOMException('Connection stopped', 'AbortError')); };
+    const timer = setTimeout(() => { cleanup(); reject(Error('Zoom session could not be saved.')); }, 10000);
+    process.on('message', reply);
+    signal.addEventListener('abort', aborted, { once: true });
+    send({ type: 'zoom_recovery_result', revision: account.revision, zoomState });
+  });
+}
 async function stop(error?: string) {
   stopRequested = true;
   connectionAbort.abort();
@@ -94,11 +109,20 @@ process.on("message", async (m: any) => {
   }
   if (m.type !== "start" || started) return;
   started = true;
+  let zoomState = m.zoomState;
   try {
     const input = m.input as StartInput;
+    const zoomSettings = m.zoomRoot ? new ZoomSettings(m.zoomRoot) : undefined;
+    let recoveryAttempted = false;
+    const recoverAuthentication = zoomSettings ? async () => {
+      if (recoveryAttempted) throw Error('Zoom sign-in required. Reconnect your account in Settings.');
+      recoveryAttempted = true;
+      send({ type: 'status', status: 'joining', detail: 'Zoom session expired. Signing in automatically…' });
+      zoomState = await recoverZoomSession(zoomSettings, connectionAbort.signal, undefined, persistRecovery);
+    } : undefined;
     config = {
       platform: "zoom",
-      authenticated: !!m.zoomState,
+      authenticated: !!zoomState || !!zoomSettings,
       botName: input.botName,
       automaticLeave: { waitingRoomTimeout: 300000 },
     };
@@ -118,10 +142,12 @@ process.on("message", async (m: any) => {
     let connectionAttempt = 0;
     connectionTask = connectWithRetries({
       signal: connectionAbort.signal,
-      open: () => {
+      open: async () => {
         connectionAttempt++;
-        return launchZoomBrowser(m.zoomState);
+        if (!zoomState && zoomSettings && recoverAuthentication) await recoverAuthentication();
+        return launchZoomBrowser(zoomState);
       },
+      recoverAuthentication,
       async connect(browser) {
         const attempt = connectionAttempt;
         let detach: (() => void) | undefined;
@@ -183,7 +209,7 @@ process.on("message", async (m: any) => {
       .first()
       .click({ timeout: 1000 })
       .catch(() => {});
-    if (m.zoomState) {
+    if (config.authenticated) {
       const named = await applyMeetingName(page!, input.botName);
       if (named !== 'applied') send({type:'name_warning', detail:'Zoom did not confirm the requested bot name. The account name may be visible; the host may restrict renaming.'});
     }
@@ -230,7 +256,7 @@ process.on("message", async (m: any) => {
     void emptyMeetingMonitor.check();
     send({ type: "status", status: "recording" });
   } catch (e) {
-    if (/auth_session_missing|Zoom sign-in required/.test(String(e))) send({type:"zoom_auth_expired"});
+    if (/auth_session_missing|auth_required|Zoom sign-in required/.test(String(e))) send({type:"zoom_auth_expired", zoomState});
     if (!stopRequested) await stop(String(e));
   }
 });

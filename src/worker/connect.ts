@@ -13,6 +13,7 @@ interface ConnectOptions<T> {
   connect(resource: T): Promise<void>;
   close(resource: T): Promise<void>;
   onChange(state: AttemptState): void;
+  recoverAuthentication?: () => Promise<void>;
   now?: () => number;
   wait?: (ms: number, signal: AbortSignal) => Promise<void>;
 }
@@ -44,6 +45,7 @@ export async function connectWithRetries<T>(options: ConnectOptions<T>): Promise
   const attempts: ConnectionAttempt[] = [];
   const emit = (nextRetryAt?: string) => options.onChange({ attempts: structuredClone(attempts), nextRetryAt });
   const delays = [10000, 10000, 60000];
+  let recoveredAuthentication = false;
   for (let number = 1; number <= 4; number++) {
     signal.throwIfAborted();
     const attempt: ConnectionAttempt = { number, startedAt: new Date(now()).toISOString(), outcome: "connecting" };
@@ -76,6 +78,14 @@ export async function connectWithRetries<T>(options: ConnectOptions<T>): Promise
       throw error;
     }
     attempt.endedAt = new Date(now()).toISOString();
+    if (!signal.aborted && number < 4 && !recoveredAuthentication && options.recoverAuthentication &&
+        failure instanceof AdmissionError && failure.outcome === 'auth_session_missing') {
+      recoveredAuthentication = true;
+      emit();
+      await options.recoverAuthentication();
+      signal.throwIfAborted();
+      continue;
+    }
     if (signal.aborted || number === 4 || !retryable(failure)) {
       emit();
       if (signal.aborted) throw abortError();

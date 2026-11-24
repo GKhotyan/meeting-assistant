@@ -12,6 +12,9 @@ const {chromium}=require(process.env.PLAYWRIGHT_MODULE || 'playwright');
  const wav=Buffer.alloc(80044);wav.write('RIFF');wav.writeUInt32LE(80036,4);wav.write('WAVEfmt ',8);wav.writeUInt32LE(16,16);wav.writeUInt16LE(1,20);wav.writeUInt16LE(1,22);wav.writeUInt32LE(8000,24);wav.writeUInt32LE(16000,28);wav.writeUInt16LE(2,32);wav.writeUInt16LE(16,34);wav.write('data',36);wav.writeUInt32LE(80000,40);
  await page.route('http://workspace.test/**',async route=>{
   const req=route.request(),path=new URL(req.url()).pathname;
+  if(path.endsWith('/summary'))return route.fulfill({json:{status:'idle',stale:false}});
+  if(path==='/api/settings/zoom')return route.fulfill({json:{status:'disconnected',connected:false}});
+    if (path === '/api/settings/ai') return route.fulfill({json:{provider:'zai',providers:{zai:{model:'glm-4.7',effort:'default',configured:false},openai:{model:'gpt-4.1',effort:'default',configured:false}}}});
   if(path==='/api/settings/deepgram')return route.fulfill({json:{configured:true}});
   if(path==='/api/settings')return route.fulfill({json:{botName:'Notes',recordingMode:'audio'}});
   if(path==='/api/schedules')return route.fulfill({json:{schedules:[]}});

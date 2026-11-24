@@ -41,6 +41,33 @@ function setup() {
   });
   return { c, root, workers };
 }
+test('expired accounts with saved passwords reach the worker without disclosing the password',async()=>{
+  const {c,root}=setup();const z=new ZoomSettings(root);
+  const state:any={cookies:[{name:'cred',value:'private',domain:'.zoom.us',path:'/',expires:-1,httpOnly:true,secure:true,sameSite:'Lax'}],origins:[]};
+  z.save('bot@example.com',state,'never-send-password');z.markExpired();
+  let sent:any;const w=new EventEmitter() as any;w.send=(m:any)=>{sent=m;if(m.type==='stop')setImmediate(()=>w.emit('exit'));};w.kill=()=>{};
+  (c as any).spawnWorker=()=>w;
+  const session=await c.startSession(input);
+  assert.equal(sent.zoomRoot,root);assert.equal(sent.zoomState,undefined);
+  assert.equal(JSON.stringify(sent).includes('never-send-password'),false);
+  await c.stopSession(session.id);
+});
+test('controller serializes recovered-session persistence and rejects disconnected or replaced account revisions',async()=>{
+  const {c,root,workers}=setup(),z=new ZoomSettings(root);
+  const state:any={cookies:[{name:'cred',value:'old',domain:'.zoom.us',path:'/',expires:-1,httpOnly:true,secure:true,sameSite:'Lax'}],origins:[]};
+  const fresh={...state,cookies:[{...state.cookies[0],value:'fresh'}]};
+  z.save('bot@example.com',state,'saved-password');const revision=z.recoveryAccount()!.revision;
+  const session=await c.startSession(input);const replies:any[]=[];workers[0].send=(m:any)=>{replies.push(m);if(m.type==='stop')setImmediate(()=>workers[0].emit('exit'));};
+  workers[0].emit('message',{type:'zoom_recovery_result',revision,zoomState:fresh});
+  assert.deepEqual(z.session(),fresh);assert.equal(replies.at(-1).saved,true);
+  z.disconnect();
+  workers[0].emit('message',{type:'zoom_recovery_result',revision,zoomState:fresh});
+  assert.equal(z.metadata().status,'not_connected');assert.equal(replies.at(-1).saved,false);
+  z.save('new@example.com',state,'new-password');
+  workers[0].emit('message',{type:'zoom_recovery_result',revision});
+  assert.equal(z.metadata().email,'new@example.com');assert.equal(z.metadata().status,'connected');assert.equal(replies.at(-1).saved,false);
+  await c.stopSession(session.id);
+});
 test("controller admits one concurrent session and rejects a second", async () => {
   const { c } = setup();
   const results = await Promise.allSettled([
@@ -271,4 +298,20 @@ for (const event of ["exit", "error"]) test(`worker ${event} finalizes an unfini
   assert.match(current.attempts?.[0].error || "", /worker/i);
   const restored = new Controller(root, () => { throw Error("must not rejoin"); });
   assert.equal(restored.getSession(s.id)?.attempts?.[0].outcome, "failed");
+});
+
+test('recordings persist resolved summary instructions without changing previous snapshots', async () => {
+ const {c,root}=setup();
+ const prompt='  Summary\nРешения и следующие шаги  ';
+ const first=await c.startSession({...input,summaryPrompt:prompt});
+ const snapshot=JSON.parse(readFileSync(join(c.getSessionDirectory(first.id),'session.json'),'utf8'));
+ assert.equal(snapshot.summaryPrompt,prompt);assert.equal(snapshot.summaryPromptSource,'custom');
+ await c.stopSession(first.id);
+ const second=await c.startSession({...input,summaryPrompt:''});
+ const defaultSnapshot=JSON.parse(readFileSync(join(c.getSessionDirectory(second.id),'session.json'),'utf8'));
+ assert.equal(defaultSnapshot.summaryPromptSource,'default');assert.match(defaultSnapshot.summaryPrompt,/Action items/);
+ assert.equal(c.getSession(first.id)?.summaryPrompt,prompt);
+ const restored=new Controller(root,()=>{throw Error('no worker expected')});
+ assert.equal(restored.getSession(first.id)?.summaryPrompt,prompt);
+ await c.stopSession(second.id);
 });

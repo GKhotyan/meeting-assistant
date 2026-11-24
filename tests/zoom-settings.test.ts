@@ -5,8 +5,29 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ZoomSettings } from '../src/integrations/zoom-settings';
 import { DeepgramSettings } from '../src/integrations/deepgram';
+import { CredentialStore } from '../src/integrations/credential-store';
 const root = () => mkdtempSync(join(tmpdir(), 'zoom-settings-'));
 const state = { cookies: [{name:'cred',value:'private-zoom-session',domain:'.zoom.us',path:'/',expires:-1,httpOnly:true,secure:true,sameSite:'Lax' as const}],origins:[] };
+test('saved Zoom password is encrypted, retained on expiration, and removed on disconnect', () => {
+  const dir=root(), zoom=new ZoomSettings(dir);
+  zoom.save('bot@example.com',state,'saved-password');
+  zoom.markExpired();
+  assert.equal(zoom.recoveryAccount()?.password,'saved-password');
+  assert.equal(zoom.connectionSession(),undefined);
+  assert.equal(JSON.stringify(zoom.metadata()).includes('saved-password'),false);
+  assert.equal(readFileSync(join(dir,'settings/api-keys.json'),'utf8').includes('saved-password'),false);
+  zoom.disconnect();
+  assert.equal(new CredentialStore(dir).read().zoom,undefined);
+});
+test('refresh preserves credentials only for the same account and stale recovery cannot restore a disconnected account', () => {
+  const zoom=new ZoomSettings(root()); zoom.save('bot@example.com',state,'saved-password');
+  zoom.save('bot@example.com',state);
+  const snapshot=zoom.recoveryAccount()!;
+  assert.equal(snapshot.password,'saved-password');
+  zoom.disconnect(); assert.equal(zoom.saveRecovered(snapshot,state),false);
+  zoom.save('other@example.com',state);
+  assert.equal(zoom.recoveryAccount(),undefined);
+});
 test('Zoom session is encrypted, survives restart and preserves Deepgram in both directions', () => {
   const dir = root(), zoom = new ZoomSettings(dir), dg = new DeepgramSettings(dir);
   assert.equal(zoom.metadata().status, 'not_connected');

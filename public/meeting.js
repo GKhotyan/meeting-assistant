@@ -31,11 +31,12 @@ window.MeetingView = (() => {
   function close() {
     cancelSeek();
     if (id) { element('meeting-audio').pause(); element('meeting-audio').removeAttribute('src'); element('meeting-audio').load(); }
+    MeetingSummary.close();
     id = null; generation++; requestNumber++; pendingRefresh = null;
   }
   function selectTab(next) {
     tab = next;
-    for (const name of ['recording','transcription']) {
+    for (const name of ['recording','transcription','summary']) {
       const selected = name === tab;
       element('meeting-tab-' + name).setAttribute('aria-selected', String(selected));
       element('meeting-tab-' + name).tabIndex = selected ? 0 : -1;
@@ -46,7 +47,7 @@ window.MeetingView = (() => {
   function render() {
     if (!id || !session) return;
     element('page-title').textContent = session.meetingName || 'Meeting';
-    element('page-description').textContent = 'Recording and transcript, together.';
+    element('page-description').textContent = 'Recording, transcript and summary, together.';
     element('meeting-meta').textContent = new Date(session.createdAt).toLocaleString('en-US') + ' · ' + session.botName + ' · ' + (labels[session.status] || session.status);
     const files = session.files.filter(file => file.status === 'ready');
     const key = JSON.stringify(files);
@@ -69,9 +70,10 @@ window.MeetingView = (() => {
       if (!files.length) element('meeting-files').textContent = 'No finalized files yet. Wait for the recording to finish.';
     }
     const running = submitting || state?.status === 'processing';
+    const locked = running || MeetingSummary.isRunning();
     const available = session.status === 'completed' && !!element('transcription-file').value;
-    for (const name of ['file','language','diarize']) element('transcription-' + name).disabled = !loaded || running || !available;
-    element('transcription-submit').disabled = !loaded || running || !available || !configured;
+    for (const name of ['file','language','diarize']) element('transcription-' + name).disabled = !loaded || locked || !available;
+    element('transcription-submit').disabled = !loaded || locked || !available || !configured;
     element('transcription-submit').textContent = running ? 'Transcribing…' : ['failed','interrupted'].includes(state?.status) ? 'Retry transcription' : state?.transcript ? 'Transcribe again' : 'Get transcription';
     element('transcription-settings').hidden = !loaded || configured;
     const status = element('transcription-status');
@@ -118,13 +120,14 @@ window.MeetingView = (() => {
         }
       }
     }
+    MeetingSummary.update(session, state);
     selectTab(tab);
     if (!element('meeting-audio').getAttribute('src')) player(element('transcription-file').value);
   }
   function refresh() {
     if (!id) return Promise.resolve();
     if (pendingRefresh) return pendingRefresh;
-    const pending = load();
+    const pending = Promise.all([load(), MeetingSummary.refresh()]);
     pendingRefresh = pending;
     pending.finally(() => { if (pendingRefresh === pending) pendingRefresh = null; });
     return pending;
@@ -152,11 +155,11 @@ window.MeetingView = (() => {
     }
   }
   function route() {
-    const match = /^#meeting\/([a-zA-Z0-9-]+)\/(recording|transcription)$/.exec(location.hash);
+    const match = /^#meeting\/([a-zA-Z0-9-]+)\/(recording|transcription|summary)$/.exec(location.hash);
     if (!match) { switchTab(location.hash === '#settings' ? 'settings' : 'now'); return; }
     const changed = id !== match[1];
     if (changed) {
-      close(); id = match[1]; session = null; state = null; loaded = false; configured = false; submitting = false; resultKey = null; fileKey = null;
+      close(); id = match[1]; MeetingSummary.open(id, render); session = null; state = null; loaded = false; configured = false; submitting = false; resultKey = null; fileKey = null;
       element('page-title').textContent = 'Loading meeting…'; element('page-description').textContent = '';
       element('meeting-meta').textContent = ''; element('meeting-error').textContent = '';
       element('meeting-files').replaceChildren(); element('transcript-result').replaceChildren();
@@ -173,11 +176,12 @@ window.MeetingView = (() => {
     if (changed) { element('page-title').focus(); void refresh(); }
   }
   function init() {
-    for (const name of ['recording','transcription']) {
+    MeetingSummary.init();
+    for (const name of ['recording','transcription','summary']) {
       element('meeting-tab-' + name).addEventListener('click', () => { if (id) location.hash = 'meeting/' + id + '/' + name; });
       element('meeting-tab-' + name).addEventListener('keydown', event => {
         if (!['ArrowLeft','ArrowRight','Home','End'].includes(event.key)) return;
-        event.preventDefault(); const target = event.key === 'Home' ? 'recording' : event.key === 'End' ? 'transcription' : name === 'recording' ? 'transcription' : 'recording';
+        event.preventDefault(); const target = event.key === 'Home' ? 'recording' : event.key === 'End' ? 'summary' : ['recording','transcription','summary'][(['recording','transcription','summary'].indexOf(name) + (event.key === 'ArrowLeft' ? 2 : 1)) % 3];
         location.hash = 'meeting/' + id + '/' + target; element('meeting-tab-' + target).focus();
       });
     }

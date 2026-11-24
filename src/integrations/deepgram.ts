@@ -1,7 +1,8 @@
+export { CredentialStore } from "./credential-store";
 import { CredentialStore } from "./credential-store";
 import { AppError } from "../session/types";
 
-function cleanKey(value: unknown): string {
+export function cleanKey(value: unknown): string {
   if (typeof value !== "string" || value.length > 512 || /[^\x20-\x7e]/.test(value) || !value.trim())
     throw new AppError(400, "Enter an API key containing up to 512 printable ASCII characters.");
   return value.trim();

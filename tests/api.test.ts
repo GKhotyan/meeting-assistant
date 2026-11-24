@@ -7,7 +7,7 @@ import { EventEmitter } from "node:events";
 import { Controller } from "../src/session/controller";
 import { createApp } from "../src/server/app";
 import { Scheduler } from "../src/session/schedules";
-async function app(password?: string, existingRoot?: string, publicOrigin?: string, deepgramFetch?: typeof fetch) {
+async function app(password?: string, existingRoot?: string, publicOrigin?: string, deepgramFetch?: typeof fetch, aiFetch?: typeof fetch) {
   const root = existingRoot ?? mkdtempSync(join(tmpdir(), "ea-api-"));
   const workers: any[] = [];
   const c = new Controller(root, () => {
@@ -21,6 +21,7 @@ async function app(password?: string, existingRoot?: string, publicOrigin?: stri
     password,
     publicOrigin,
     deepgramFetch,
+    aiFetch,
     publicDir: join(process.cwd(), "public"),
     scheduler: new Scheduler(root, c),
   });
@@ -367,4 +368,130 @@ test('transcription endpoints require authentication',async()=>{
   const a=await app('secret');
   try {for(const method of ['GET','POST'])assert.equal((await fetch(a.base+'/api/sessions/test/transcription',{method,headers:{'Content-Type':'application/json'}})).status,401);}
   finally {await a.close();}
+});
+
+test("AI settings API preserves provider credentials, checks drafts and removes only selected keys", async () => {
+  const checked: string[] = [];
+  const transport: typeof fetch = async (_url, options) => {
+    checked.push((options?.headers as Record<string,string>).Authorization);
+    return Response.json({data:[{id:'fixture-model'}]});
+  };
+  const a=await app(undefined,undefined,undefined,undefined,transport);
+  const send=(method: string, value: unknown, suffix='')=>fetch(a.base+'/api/settings/ai'+suffix,{method,headers:{'Content-Type':'application/json'},body:JSON.stringify(value)});
+  try {
+    assert.equal((await fetch(a.base+'/api/settings/ai')).status,200);
+    assert.equal((await send('POST',{provider:'openai'},'/check')).status,400);
+    const saved=await send('PUT',{provider:'openai',model:'gpt-4.1',effort:'default',apiKey:'saved-secret'});
+    assert.equal(saved.status,200);
+    assert.equal(JSON.stringify(await saved.json()).includes('saved-secret'),false);
+    assert.equal((await (await send('POST',{provider:'openai',apiKey:'draft-secret'},'/check')).json()).valid,true);
+    assert.equal((await (await send('POST',{provider:'openai'},'/check')).json()).valid,true);
+    assert.deepEqual(checked,['Bearer draft-secret','Bearer saved-secret']);
+    for(const invalid of [null,[],{provider:'other'},{provider:'openai',apiKey:42},{provider:'openai',apiKey:'bad\nkey'}])assert.equal((await send('POST',invalid,'/check')).status,400);
+    assert.equal((await send('PUT',{provider:'zai',model:'glm-4.7',apiKey:'zai-secret'})).status,200);
+    const removed=await (await send('DELETE',{provider:'openai'})).json();
+    assert.equal(removed.providers.openai.configured,false);assert.equal(removed.providers.zai.configured,true);
+    assert.equal((await send('PATCH',{})).status,405);
+  } finally {await a.close();}
+});
+test("AI settings routes require authentication and reject cross-site changes", async () => {
+ const a=await app('secret');
+ try {
+  for(const [method,suffix] of [['GET',''],['PUT',''],['DELETE',''],['POST','/check']]){
+   const url=a.base+'/api/settings/ai'+suffix;
+   assert.equal((await fetch(url,{method,headers:{'Content-Type':'application/json'}})).status,401);
+   if(method!=='GET')assert.equal((await fetch(url,{method,headers:{'Content-Type':'application/json',Origin:'https://evil.test',Authorization:'Basic '+Buffer.from('assistant:secret').toString('base64')},body:'{}'})).status,403);
+  }
+ } finally {await a.close();}
+});
+test('AI settings browser script is served by the real HTTP application', async () => {
+ const a=await app();
+ try {
+  const response=await fetch(a.base+'/ai-settings.js');
+  assert.equal(response.status,200);
+  assert.match(response.headers.get('content-type')||'',/javascript/);
+  assert.match(await response.text(),/\/api\/settings\/ai/);
+ }finally{await a.close();}
+});
+test('schedule API stores full-length Unicode summary prompts and validates updates', async () => {
+ const a=await app();
+ const headers={'Content-Type':'application/json'};
+ const input={name:'Daily',meetingUrl:'https://zoom.us/j/12345678901',weekdays:[1],time:'10:00',timeZone:'Europe/Moscow',recordingMode:'audio',summaryPrompt:'я'.repeat(8000)};
+ try {
+  const response=await fetch(a.base+'/api/schedules',{method:'POST',headers,body:JSON.stringify(input)});
+  assert.equal(response.status,201);const created=await response.json();assert.equal(created.summaryPrompt,input.summaryPrompt);
+  const updated=await fetch(a.base+'/api/schedules/'+created.id,{method:'PUT',headers,body:JSON.stringify({summaryPrompt:'x'.repeat(8001)})});
+  assert.equal(updated.status,400);
+  assert.equal((await (await fetch(a.base+'/api/schedules')).json()).schedules[0].summaryPrompt,input.summaryPrompt);
+  const defaults=await (await fetch(a.base+'/api/summary-instructions')).json();
+  assert.equal(defaults.maxLength,8000);assert.match(defaults.defaultPrompt,/Action items/);
+  const script=await fetch(a.base+'/schedule-summary.js');assert.equal(script.status,200);assert.match(script.headers.get('content-type')||'',/javascript/);
+ } finally {await a.close();}
+});
+
+test('summary API runs explicit paid jobs, protects inputs, downloads Markdown and preserves result on reload', async () => {
+ const root=mkdtempSync(join(tmpdir(),'summary-api-')),dir=join(root,'recordings','Daily_summary-id');mkdirSync(dir,{recursive:true});
+ const transcript={audioFileId:'audio',audioFile:'audio.webm',language:'ru',diarize:false,model:'nova-3',createdAt:'2026-11-23T09:00:00Z',text:'Иван отправит отчёт.',segments:[]};
+ writeFileSync(join(dir,'session.json'),JSON.stringify({id:'summary-id',meetingName:'Daily',botName:'Notes',status:'completed',createdAt:'2026-11-23T08:00:00Z',files:[]}));
+ writeFileSync(join(dir,'transcription.json'),JSON.stringify({status:'completed',transcript}));
+ let calls=0,release!:()=>void;const gate=new Promise<void>(resolve=>release=resolve);
+ const a=await app(undefined,root,undefined,undefined,async()=>{calls++;await gate;return Response.json({choices:[{message:{content:'## Задачи\n- Иван отправит отчёт.'},finish_reason:'stop'}]});});
+ const send=(path:string,method='GET',value:unknown={})=>fetch(a.base+path,{method,...(method!=='GET'?{headers:{'Content-Type':'application/json'},body:JSON.stringify(value)}:{})});
+ const path='/api/sessions/summary-id/summary';
+ try {
+  assert.equal((await send('/api/settings/ai','PUT',{provider:'openai',model:'gpt-4.1',apiKey:'fixture-summary-secret'})).status,200);
+  assert.equal((await (await send(path)).json()).status,'idle');assert.equal(calls,0);
+  assert.equal((await send(path+'/download')).status,404);
+  assert.equal((await send(path,'POST',null)).status,400);
+  assert.equal((await send(path,'POST')).status,202);
+  assert.equal((await send(path,'POST')).status,409);
+  assert.equal((await send('/api/sessions/summary-id/transcription','POST')).status,409);
+  assert.equal((await send('/api/sessions/summary-id','DELETE')).status,409);
+  const listing=await (await send('/api/sessions')).json();assert.equal(listing.sessions[0].summary.status,'processing');
+  release();let state:any;
+  for(let i=0;i<50;i++){state=await (await send(path)).json();if(state.status!=='processing')break;await new Promise(r=>setTimeout(r,5));}
+  assert.equal(state.status,'completed');assert.equal(calls,1);assert.equal(JSON.stringify(state).includes('fixture-summary-secret'),false);
+  const download=await send(path+'/download');assert.match(download.headers.get('content-type')!,/text\/markdown/);assert.match(download.headers.get('content-disposition')!,/attachment/);assert.match(await download.text(),/Иван отправит/);
+  assert.equal((await send(path,'POST')).status,409);
+  const restored=await app(undefined,root);try{assert.equal((await (await fetch(restored.base+path)).json()).result.text,state.result.text);}finally{await restored.close();}
+  assert.equal((await send('/api/sessions/missing/summary')).status,404);
+  assert.equal((await send(path,'PUT')).status,405);
+  assert.equal((await send('/meeting-summary.js')).status,200);
+ } finally {release();await a.close();}
+});
+
+test('AI provider selection is independent of editing either provider configuration',async()=>{
+ const a=await app();const send=(path:string,value:unknown)=>fetch(a.base+path,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(value)});
+ try{
+  await send('/api/settings/ai',{provider:'zai',model:'glm-4.7',apiKey:'z-secret'});
+  const saved=await (await send('/api/settings/ai',{provider:'openai',model:'gpt-5',effort:'high',apiKey:'o-secret',activate:false})).json();
+  assert.equal(saved.provider,'zai');assert.equal(saved.providers.openai.configured,true);assert.equal(saved.providers.zai.configured,true);
+  const response=await send('/api/settings/ai/provider',{provider:'openai'});assert.equal(response.status,200);
+  const selected=await response.json();assert.equal(selected.provider,'openai');assert.deepEqual(selected.providers,saved.providers);
+  for(const value of [null,[],{provider:'invalid'}])assert.equal((await send('/api/settings/ai/provider',value)).status,400);
+  assert.equal(JSON.stringify(selected).includes('secret'),false);
+ }finally{await a.close();}
+});
+
+test('summary API previews current schedule prompt and regeneration replaces an older default prompt',async()=>{
+ const root=mkdtempSync(join(tmpdir(),'summary-current-prompt-')),dir=join(root,'recordings','Daily_linked-id');mkdirSync(dir,{recursive:true});
+ writeFileSync(join(dir,'session.json'),JSON.stringify({id:'linked-id',meetingName:'Daily',botName:'Notes',status:'completed',createdAt:'2026-11-23T08:00:00Z',files:[]}));
+ writeFileSync(join(dir,'transcription.json'),JSON.stringify({status:'completed',transcript:{audioFileId:'audio',audioFile:'audio.webm',language:'ru',diarize:false,model:'nova-3',createdAt:'2026-11-23T09:00:00Z',text:'A decision.',segments:[]}}));
+ writeFileSync(join(root,'schedules.json'),JSON.stringify([{id:'daily-rule',name:'Daily',meetingUrl:'https://zoom.us/j/12345678901',weekdays:[1],time:'10:00',timeZone:'Europe/Moscow',recordingMode:'audio',enabled:false,summaryPrompt:'Only thematic bullets, no names.',lastRun:{status:'started',sessionId:'linked-id',scheduledAt:'2026-11-23T08:00:00Z'}}]));
+ let system='';const a=await app(undefined,root,undefined,undefined,async(_url,options)=>{system=JSON.parse(options!.body as string).messages[0].content;return Response.json({choices:[{message:{content:'## Основные итоги\n- A decision.'},finish_reason:'stop'}]});});
+ const send=(path:string,method='GET',value:unknown={})=>fetch(a.base+path,{method,...(method!=='GET'?{headers:{'Content-Type':'application/json'},body:JSON.stringify(value)}:{})});
+ const path='/api/sessions/linked-id/summary';
+ try{
+  await send('/api/settings/ai','PUT',{provider:'openai',model:'gpt-4.1',apiKey:'fixture-secret'});
+  const idle=await(await send(path)).json();assert.equal(idle.instructions.prompt,'Only thematic bullets, no names.');assert.equal(idle.instructions.promptOrigin,'schedule');
+  assert.equal(a.c.getSession('linked-id')?.scheduleId,'daily-rule');
+  await send(path,'POST');let first:any;
+  for(let i=0;i<50;i++){first=await(await send(path)).json();if(first.status!=='processing')break;await new Promise(r=>setTimeout(r,5));}
+  assert.equal(first.result.prompt,'Only thematic bullets, no names.');assert.match(system,/Only thematic bullets/);
+  await send('/api/schedules/daily-rule','PUT',{summaryPrompt:'NEW FORMAT ONLY'});
+  const changed=await(await send(path)).json();assert.equal(changed.instructionsChanged,true);assert.equal(changed.stale,true);assert.equal(changed.result.prompt,first.result.prompt);
+  await send(path,'POST',{regenerate:true});let updated:any;
+  for(let i=0;i<50;i++){updated=await(await send(path)).json();if(updated.status!=='processing')break;await new Promise(r=>setTimeout(r,5));}
+  assert.equal(updated.result.prompt,'NEW FORMAT ONLY');assert.equal(updated.stale,false);assert.match(system,/NEW FORMAT ONLY/);
+ }finally{await a.close();}
 });

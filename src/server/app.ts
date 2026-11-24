@@ -10,17 +10,22 @@ import { createHash, timingSafeEqual } from "node:crypto";
 import { Controller } from "../session/controller";
 import { AppError } from "../session/types";
 import type { Scheduler } from "../session/schedules";
-import { DeepgramSettings, checkDeepgram } from "../integrations/deepgram";
+import { DeepgramSettings, checkDeepgram, cleanKey } from "../integrations/deepgram";
+import { AISettings, aiProvider, checkAI } from "../integrations/ai";
 import { Transcriptions } from "../transcription/service";
+import { Summaries } from "../summary/service";
+import { DEFAULT_SUMMARY_PROMPT, SUMMARY_PROMPT_LIMIT } from "../session/summary-prompt";
 import { openReadyFile } from "../recordings/access";
 const hash = (s: string) => createHash("sha256").update(s).digest();
 export function createApp(
   controller: Controller,
-  options: { zoom?: ZoomConnection; password?: string; publicDir: string; scheduler?: Scheduler; publicOrigin?: string; deepgramFetch?: typeof fetch },
+  options: { zoom?: ZoomConnection; password?: string; publicDir: string; scheduler?: Scheduler; publicOrigin?: string; deepgramFetch?: typeof fetch; aiFetch?: typeof fetch },
 ) {
+  const ai = new AISettings(controller.root);
   const zoom = options.zoom ?? new ZoomConnection(controller.root);
   const deepgram = new DeepgramSettings(controller.root);
   const transcriptions = new Transcriptions(controller, deepgram, options.deepgramFetch);
+  const summaries = new Summaries(controller, transcriptions, ai, options.aiFetch, () => options.scheduler?.list() ?? []);
   const publicUrl = options.publicOrigin ? new URL(options.publicOrigin) : undefined;
   if (publicUrl && (!["http:", "https:"].includes(publicUrl.protocol) || publicUrl.username || publicUrl.password || publicUrl.pathname !== "/" || publicUrl.search || publicUrl.hash))
     throw new Error("PUBLIC_ORIGIN must be an HTTP(S) origin, without a path, credentials, query or fragment");
@@ -85,7 +90,7 @@ export function createApp(
         const chunks: Buffer[] = [];
         for await (const chunk of req) {
           bytes += chunk.length;
-          if (bytes > 16384) throw new AppError(413, "Request body is too large");
+          if (bytes > (path === "/api/schedules" || /^\/api\/schedules\/[a-zA-Z0-9-]+$/.test(path) ? 65536 : 16384)) throw new AppError(413, "Request body is too large");
           chunks.push(chunk);
         }
         try {
@@ -94,6 +99,10 @@ export function createApp(
           throw new AppError(400, "Invalid JSON");
         }
       };
+      if (path === "/api/summary-instructions" && req.method === "GET") {
+        json(200, { defaultPrompt: DEFAULT_SUMMARY_PROMPT, maxLength: SUMMARY_PROMPT_LIMIT });
+        return;
+      }
       if (path.startsWith("/api/settings/zoom")) {
         if (req.headers["sec-fetch-site"] === "cross-site" || req.headers["sec-fetch-site"] === "same-site")
           throw new AppError(403, "Cross-site browser access is not allowed");
@@ -130,6 +139,29 @@ export function createApp(
         } else throw new AppError(405, "Method not allowed");
         return;
       }
+      if (path === "/api/settings/ai/check" && req.method === "POST") {
+        const value = await body();
+        if (!value || typeof value !== "object" || Array.isArray(value))
+          throw new AppError(400, "Invalid AI settings.");
+        const provider = aiProvider(value.provider);
+        if (value.apiKey !== undefined && value.apiKey !== "") cleanKey(value.apiKey);
+        const key = value.apiKey || ai.key(provider);
+        if (!key) throw new AppError(400, "Enter or save an API key for this provider first.");
+        json(200, await checkAI(provider, key, options.aiFetch));
+        return;
+      }
+      if (path === "/api/settings/ai/provider") {
+        if (req.method !== "PUT") throw new AppError(405, "Method not allowed");
+        json(200, ai.select(aiProvider((await body())?.provider)));
+        return;
+      }
+      if (path === "/api/settings/ai") {
+        if (req.method === "GET") json(200, ai.metadata());
+        else if (req.method === "PUT") json(200, ai.save(await body()));
+        else if (req.method === "DELETE") json(200, ai.remove(aiProvider((await body())?.provider)));
+        else throw new AppError(405, "Method not allowed");
+        return;
+      }
       if (path === "/api/settings/deepgram/check" && req.method === "POST") {
         const value = await body();
         if (!value || typeof value !== "object" || Array.isArray(value) ||
@@ -155,7 +187,7 @@ export function createApp(
         return;
       }
       if (path === "/api/sessions") {
-        if (req.method === "GET") json(200, { sessions: controller.list().map(session => ({ ...session, transcription: transcriptions.summary(session.id) })) });
+        if (req.method === "GET") json(200, { sessions: controller.list().map(session => ({ ...session, transcription: transcriptions.summary(session.id), summary: summaries.status(session.id) })) });
         else if (req.method === "POST")
           json(201, await controller.startSession(await body()));
         else throw new AppError(405, "Method not allowed");
@@ -164,7 +196,27 @@ export function createApp(
       const transcription = path.match(/^\/api\/sessions\/([a-zA-Z0-9-]+)\/transcription$/);
       if (transcription) {
         if (req.method === "GET") json(200, transcriptions.get(transcription[1]));
-        else if (req.method === "POST") json(202, transcriptions.start(transcription[1], await body()));
+        else if (req.method === "POST") {
+          const value = await body();
+          if (summaries.isRunning(transcription[1])) throw new AppError(409, "Wait for summary generation to finish before transcribing this meeting again.");
+          json(202, transcriptions.start(transcription[1], value));
+        }
+        else throw new AppError(405, "Method not allowed");
+        return;
+      }
+      const summary = path.match(/^\/api\/sessions\/([a-zA-Z0-9-]+)\/summary(\/download)?$/);
+      if (summary) {
+        if (summary[2]) {
+          if (req.method !== "GET") throw new AppError(405, "Method not allowed");
+          const result = summaries.get(summary[1]).result;
+          if (!result) throw new AppError(404, "No saved summary yet.");
+          res.writeHead(200, {
+            "Content-Type": "text/markdown; charset=utf-8",
+            "Content-Disposition": `attachment; filename="${summary[1]}-summary.md"`,
+          });
+          res.end(result.text);
+        } else if (req.method === "GET") json(200, summaries.get(summary[1]));
+        else if (req.method === "POST") json(202, summaries.start(summary[1], await body()));
         else throw new AppError(405, "Method not allowed");
         return;
       }
@@ -181,6 +233,7 @@ export function createApp(
       const detail = path.match(/^\/api\/sessions\/([a-zA-Z0-9-]+)$/);
       if (detail && req.method === "DELETE") {
         if (transcriptions.isRunning(detail[1])) throw new AppError(409, "Wait for transcription to finish before deleting this meeting.");
+        if (summaries.isRunning(detail[1])) throw new AppError(409, "Wait for summary generation to finish before deleting this meeting.");
         controller.deleteSession(detail[1]);
         json(200, { status: "deleted" });
         return;
@@ -231,8 +284,11 @@ export function createApp(
       const assets: Record<string, string> = {
         "/": "index.html",
         "/app.js": "app.js",
+        "/schedule-summary.js": "schedule-summary.js",
+        "/ai-settings.js": "ai-settings.js",
         "/zoom-settings.js": "zoom-settings.js",
         "/meeting.js": "meeting.js",
+        "/meeting-summary.js": "meeting-summary.js",
         "/style.css": "style.css",
       };
       if (req.method === "GET" && assets[path]) {

@@ -15,6 +15,8 @@ const { chromium } = require(process.env.PLAYWRIGHT_MODULE || '/app/node_modules
   ];
   await page.route('http://workspace.test/**', async route => {
     const request = route.request(), path = new URL(request.url()).pathname;
+    if (path === '/api/settings/zoom') return route.fulfill({json:{status:'disconnected',connected:false}});
+    if (path === '/api/settings/ai') return route.fulfill({json:{provider:'zai',providers:{zai:{model:'glm-4.7',effort:'default',configured:false},openai:{model:'gpt-4.1',effort:'default',configured:false}}}});
     if (path === '/api/settings/deepgram') return route.fulfill({json:{configured:false}});
     if (path === '/api/settings') {
       if (request.method() === 'PUT') {

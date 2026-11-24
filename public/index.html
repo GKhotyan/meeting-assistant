@@ -5,8 +5,11 @@
 <meta name="viewport" content="width=device-width,initial-scale=1" />
 <title>Meeting Assistant</title>
 <link rel="stylesheet" href="/style.css" />
+<script defer src="/meeting-summary.js"></script>
 <script defer src="/meeting.js"></script>
+<script defer src="/schedule-summary.js"></script>
 <script defer src="/app.js"></script>
+<script defer src="/ai-settings.js"></script>
 <script defer src="/zoom-settings.js"></script>
 </head>
 <body>
@@ -38,6 +41,7 @@
     <nav class="meeting-tabs" role="tablist" aria-label="Meeting information">
       <button id="meeting-tab-recording" role="tab" aria-selected="true" aria-controls="meeting-panel-recording">Recording</button>
       <button id="meeting-tab-transcription" role="tab" aria-selected="false" aria-controls="meeting-panel-transcription" tabindex="-1">Transcription</button>
+      <button id="meeting-tab-summary" role="tab" aria-selected="false" aria-controls="meeting-panel-summary" tabindex="-1">Summary</button>
     </nav>
     <div id="meeting-player" class="meeting-player" hidden><label for="meeting-audio">Meeting audio</label><audio id="meeting-audio" controls preload="metadata"></audio></div>
     <section id="meeting-panel-recording" role="tabpanel" aria-labelledby="meeting-tab-recording"><h2>Recording files</h2><div id="meeting-files" class="meeting-files"></div></section>
@@ -56,6 +60,23 @@
         <p id="transcription-feedback" role="status" aria-live="polite"></p>
       </form>
       <div id="transcript-result" class="transcript-result"></div>
+    </section>
+    <section id="meeting-panel-summary" role="tabpanel" aria-labelledby="meeting-tab-summary" hidden>
+      <h2>Meeting summary</h2>
+      <p id="summary-provider" class="muted"></p>
+      <p id="summary-status" class="muted" role="status" aria-live="polite">Loading summary…</p>
+      <p id="summary-instructions-origin" class="muted"></p>
+      <details id="summary-next-instructions" class="summary-used-instructions" hidden><summary>Instructions (prompt) for next generation</summary><pre id="summary-next-prompt" tabindex="0" role="region" aria-label="Instructions (prompt) for next generation"></pre></details>
+      <button id="summary-edit-prompt" type="button" class="secondary" hidden>Edit instructions (prompt)</button>
+      <p class="muted">Generate a summary from the saved transcript using this meeting's instructions. Sends transcript text and instructions to your selected AI provider. Long meetings may require multiple requests. Provider charges may apply; processing continues when you leave this page.</p>
+      <div class="actions summary-controls"><button id="summary-submit" type="button" disabled>Generate summary</button><a id="summary-settings" href="#settings" hidden>Configure AI in Settings</a></div>
+      <p id="summary-feedback" role="status" aria-live="polite"></p>
+      <p id="summary-previous" class="muted" hidden>Previous successful summary</p>
+      <p id="summary-stale" class="summary-notice" hidden>The transcript has changed or is being replaced. This summary uses an earlier transcript. Generate again after transcription completes to update it.</p>
+      <p id="summary-meta" class="muted" hidden></p>
+      <div id="summary-actions" class="actions" hidden><button id="summary-copy" type="button" class="secondary">Copy summary</button><a id="summary-download" class="download" href="#">Download Markdown</a></div>
+      <div id="summary-result" class="summary-result"></div>
+      <details id="summary-instructions" class="summary-used-instructions" hidden><summary>Instructions (prompt) used for this summary</summary><pre id="summary-instructions-text" tabindex="0" role="region" aria-label="Instructions (prompt) used for this summary"></pre></details>
     </section>
   </section>
   <section id="panel-schedule" role="tabpanel" aria-labelledby="tab-schedule" hidden>
@@ -83,26 +104,42 @@
               </label>
             </div>
             <label>Recording mode<select id="schedule-mode"><option value="video">Full video</option><option value="screenshots">Screenshots every 15 seconds</option><option value="audio">Audio only</option></select></label>
-            <p class="muted">Uses the bot name from your current settings. Missed launches are skipped after one minute; they are never queued for later.</p>
+            <p class="muted">Missed launches are skipped after one minute; they are never queued for later.</p>
+            <details id="schedule-summary" class="summary-instructions">
+              <summary>Summary instructions (prompt) <span id="schedule-summary-state" class="instruction-state">Default instructions</span></summary>
+              <div class="summary-instructions-body">
+                <p id="schedule-ai-provider" class="muted">Uses the provider and model saved in AI settings.</p>
+                <a class="summary-settings-link" href="#settings">Manage AI settings</a>
+                <label for="schedule-prompt" class="sr-only">Summary prompt</label>
+                <p id="schedule-prompt-help" class="muted">Describe what the summary should focus on, its structure, and output language. Leave empty to use the default instructions.</p>
+                <textarea id="schedule-prompt" rows="10" maxlength="8000" aria-describedby="schedule-prompt-help schedule-prompt-count" placeholder="For example: Summarize decisions, action items, owners, and open questions."></textarea>
+                <p id="schedule-prompt-count" class="prompt-count">0 / 8,000 characters</p>
+                <div class="actions"><button id="schedule-prompt-example" type="button" class="secondary">Insert example</button><button id="schedule-prompt-expand" type="button" class="secondary">Expand editor</button></div>
+                <p class="muted">These instructions apply the next time you generate or regenerate a summary for a linked recording, including existing recordings. Saving does not send meeting content to an AI provider or change saved summaries.</p>
+                <p id="schedule-prompt-feedback" role="status" aria-live="polite"></p>
+              </div>
+            </details>
             <div class="actions"><button id="save-schedule" type="submit">Save meeting</button><button id="cancel-schedule" type="button" class="secondary">Cancel</button></div>
           </form>
           <div id="schedules"></div>
 
   </section>
   <section id="panel-settings" role="tabpanel" aria-labelledby="tab-settings" hidden>
-    <h2>Recording preferences</h2><p class="muted">Defaults for your next meeting. Changes do not affect a recording in progress.</p>
+    <section class="settings-card" aria-labelledby="recording-settings-title">
+    <h2 id="recording-settings-title">Recording preferences</h2><p class="muted">Defaults for your next meeting. Changes do not affect a recording in progress.</p>
     <form id="settings-form" class="settings-form"><label>Bot name<input id="settings-bot" required maxlength="100" /></label><label>Default recording mode<select id="settings-mode"><option value="video">Full video</option><option value="screenshots">Screenshots every 15 seconds</option><option value="audio">Audio only</option></select></label><p class="muted">Audio is recorded in every mode. Scheduled meetings use their own recording mode and bot name.</p><button type="submit">Save settings</button></form>
-    <form id="zoom-form" class="settings-form integration-settings" aria-labelledby="zoom-title">
+    </section>
+    <form id="zoom-form" class="settings-form integration-settings settings-card" aria-labelledby="zoom-title">
       <div class="zoom-field-heading"><h2 id="zoom-title">Zoom account <span class="muted">Optional</span></h2><span class="field-help"><button class="field-help-button" type="button" aria-label="About the bot Zoom account" aria-describedby="zoom-account-help">?</button><span class="field-help-tooltip" id="zoom-account-help" role="tooltip">Use the email and password of a separate Zoom account registered specifically for your bot. Signing up is straightforward. Connecting an account is optional, but may improve the bot’s chances of passing Zoom’s checks and joining meetings. It does not guarantee admission.</span></span></div>
       <p class="muted">Connect an account for future meetings, or leave disconnected to join as a guest. Each meeting keeps its own bot name when Zoom permits it.</p>
       <p id="zoom-status" role="status" aria-live="polite">Loading Zoom account…</p>
       <label for="zoom-email">Zoom email</label><input id="zoom-email" type="email" maxlength="254" autocomplete="username" required />
       <label for="zoom-password">Zoom password</label><input id="zoom-password" type="password" maxlength="1024" autocomplete="current-password" required />
-      <p class="muted">Your password is used only for this sign-in. The verified session is encrypted on this server and survives restarts when data storage is preserved. Zoom may require you to reconnect.</p>
+      <p class="muted">Your password and verified session are encrypted on this server. If the session expires, the app tries to sign in automatically once before reconnecting to the meeting. Zoom verification codes or CAPTCHA require sign-in here. Disconnect removes the saved credentials.</p>
       <div class="actions"><button id="zoom-connect" type="submit" disabled>Connect</button><button id="zoom-check" class="secondary" type="button" hidden>Check connection</button><button id="zoom-disconnect" class="secondary" type="button" hidden>Disconnect</button><button id="zoom-cancel" class="secondary" type="button" hidden>Cancel sign-in</button><button id="zoom-browser-open" class="secondary" type="button" hidden>Continue in browser</button><button id="zoom-reload" class="secondary" type="button" hidden>Retry loading</button></div>
       <p id="zoom-feedback" role="status" aria-live="polite"></p>
     </form>
-    <form id="deepgram-form" class="settings-form integration-settings" aria-labelledby="deepgram-title">
+    <form id="deepgram-form" class="settings-form integration-settings settings-card" aria-labelledby="deepgram-title">
       <h2 id="deepgram-title">Deepgram</h2>
       <p class="muted">Configure your API key for meeting transcription.</p>
       <p id="deepgram-status" class="muted" role="status">Loading key status…</p>
@@ -112,9 +149,75 @@
       <div class="actions"><button id="deepgram-save" type="submit" disabled>Save key</button><button id="deepgram-check" class="secondary" type="button" disabled>Check connection</button><button id="deepgram-remove" class="secondary" type="button" disabled>Remove key</button></div>
       <p id="deepgram-feedback" role="status" aria-live="polite"></p>
     </form>
+    <section id="ai-settings" class="integration-settings ai-settings settings-card" aria-labelledby="ai-title">
+      <h2 id="ai-title">AI models</h2>
+      <p class="muted">Configure both providers independently, then choose which one generates meeting summaries.</p>
+      <form id="ai-provider-form" class="ai-selection">
+        <label for="ai-provider">Summary provider</label>
+        <div class="actions"><select id="ai-provider" disabled><option value="openai">OpenAI</option><option value="zai">z.ai</option></select><button id="ai-apply-provider" type="submit" disabled>Apply provider</button></div>
+      </form>
+      <p id="ai-active" class="muted" role="status">Loading AI settings…</p>
+      <p id="ai-feedback" role="status" aria-live="polite"></p>
+      <button id="ai-reload" class="secondary" type="button" hidden>Retry loading</button>
+      <div class="ai-provider-grid">
+        <form id="ai-openai-form" class="ai-provider-card" aria-labelledby="ai-openai-title">
+          <h3 id="ai-openai-title">OpenAI</h3>
+          <p id="ai-openai-status" class="muted" role="status"></p>
+          <label for="ai-openai-key">OpenAI API key</label>
+          <div class="key-entry"><input id="ai-openai-key" type="password" maxlength="512" autocomplete="off" spellcheck="false" autocapitalize="none" aria-describedby="ai-openai-key-help" disabled /><button id="ai-openai-toggle" class="secondary" type="button" aria-controls="ai-openai-key" aria-pressed="false" disabled>Show key</button></div>
+          <p id="ai-openai-key-help" class="muted">Encrypted on this server. Leave empty to keep this provider's saved key.</p>
+          <label for="ai-openai-model">OpenAI model ID</label>
+          <input id="ai-openai-model" list="ai-openai-models" maxlength="128" required autocomplete="off" spellcheck="false" disabled />
+          <datalist id="ai-openai-models"></datalist>
+          <label for="ai-openai-effort">OpenAI reasoning effort</label><select id="ai-openai-effort" aria-describedby="ai-openai-effort-help" disabled></select>
+          <p id="ai-openai-effort-help" class="muted">GPT-4.1 requires Model default. GPT-5 supports Low, Medium and High. Saving does not change the summary provider.</p>
+          <div class="actions"><button id="ai-openai-save" type="submit" disabled>Save OpenAI settings</button><button id="ai-openai-check" class="secondary" type="button" disabled>Check connection</button><button id="ai-openai-remove" class="secondary" type="button" disabled>Remove key</button></div>
+          <p id="ai-openai-feedback" role="status" aria-live="polite"></p>
+          <p class="muted"><a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener noreferrer">Get OpenAI API key</a></p>
+        </form>
+        <form id="ai-zai-form" class="ai-provider-card" aria-labelledby="ai-zai-title">
+          <h3 id="ai-zai-title">z.ai</h3>
+          <p id="ai-zai-status" class="muted" role="status"></p>
+          <label for="ai-zai-key">z.ai API key</label>
+          <div class="key-entry"><input id="ai-zai-key" type="password" maxlength="512" autocomplete="off" spellcheck="false" autocapitalize="none" aria-describedby="ai-zai-key-help" disabled /><button id="ai-zai-toggle" class="secondary" type="button" aria-controls="ai-zai-key" aria-pressed="false" disabled>Show key</button></div>
+          <p id="ai-zai-key-help" class="muted">Encrypted on this server. Leave empty to keep this provider's saved key.</p>
+          <label for="ai-zai-preset">z.ai model</label>
+          <select id="ai-zai-preset" aria-describedby="ai-zai-model-help" disabled></select>
+          <p id="ai-zai-model-help" class="muted">Choose from the full model list, or enter an exact API ID below. Availability depends on your account.</p>
+          <label for="ai-zai-model">z.ai model ID</label>
+          <input id="ai-zai-model" list="ai-zai-models" maxlength="128" required autocomplete="off" spellcheck="false" disabled />
+          <datalist id="ai-zai-models"></datalist>
+          <label for="ai-zai-effort">z.ai reasoning effort</label><select id="ai-zai-effort" aria-describedby="ai-zai-effort-help" disabled></select>
+          <p id="ai-zai-effort-help" class="muted">GLM-4.7 and GLM-5 through GLM-5.2 support Model default or High (thinking enabled). GLM-5.3 supports Low, High and Max. Saving does not change the summary provider.</p>
+          <div class="actions"><button id="ai-zai-save" type="submit" disabled>Save z.ai settings</button><button id="ai-zai-check" class="secondary" type="button" disabled>Check connection</button><button id="ai-zai-remove" class="secondary" type="button" disabled>Remove key</button></div>
+          <p id="ai-zai-feedback" role="status" aria-live="polite"></p>
+          <p class="muted"><a href="https://z.ai/manage-apikey/apikey-list" target="_blank" rel="noopener noreferrer">Get z.ai API key</a></p>
+        </form>
+      </div>
+      <p class="muted">Model availability depends on your provider account. Checking a connection lists models without sending meeting content or saving changes. It does not verify generation permissions or balance.</p>
+    </section>
   </section>
   <footer><span id="connection">Connecting…</span><span>Meeting Assistant <span aria-hidden="true">·</span> Your conversations, on your terms.</span></footer>
 </main>
+<dialog id="summary-prompt-editor" class="prompt-dialog" aria-labelledby="summary-prompt-editor-title" aria-describedby="summary-prompt-warning">
+  <form id="summary-prompt-editor-form">
+    <div class="prompt-dialog-heading"><h2 id="summary-prompt-editor-title">Edit shared instructions (prompt)</h2></div>
+    <p id="summary-prompt-warning" class="summary-notice"></p>
+    <label for="summary-prompt-draft">Instructions (prompt)</label>
+    <p id="summary-prompt-help" class="muted">Leave empty to use the default instructions. Changes apply to future summary generations; saved summaries and jobs already running keep their original instructions.</p>
+    <textarea id="summary-prompt-draft" rows="16" maxlength="8000" aria-describedby="summary-prompt-help summary-prompt-count" disabled></textarea>
+    <p id="summary-prompt-count" class="prompt-count">0 / 8,000 characters</p>
+    <p id="summary-prompt-error" class="error" role="status" aria-live="polite"></p>
+    <div class="actions"><button id="summary-prompt-save" type="submit" disabled>Save shared prompt</button><button id="summary-prompt-cancel" type="button" class="secondary">Cancel</button></div>
+  </form>
+</dialog>
+<dialog id="summary-prompt-dialog" class="prompt-dialog" aria-labelledby="summary-prompt-title">
+  <div class="prompt-dialog-heading"><h2 id="summary-prompt-title">Summary instructions (prompt)</h2><p class="muted">Edit instructions for this recurring meeting. Use instructions applies this draft to the meeting form.</p></div>
+  <label for="expanded-summary-prompt">Summary prompt</label>
+  <textarea id="expanded-summary-prompt" rows="16" maxlength="8000" aria-describedby="expanded-prompt-count"></textarea>
+  <p id="expanded-prompt-count" class="prompt-count">0 / 8,000 characters</p>
+  <div class="actions"><button id="apply-summary-prompt" type="button">Use instructions</button><button id="cancel-summary-prompt" type="button" class="secondary">Cancel</button></div>
+</dialog>
 <dialog id="record-dialog" aria-labelledby="record-title"><div class="drawer-heading"><div><span class="eyebrow">NEW MEETING</span><h2 id="record-title">Record a meeting</h2></div><button type="button" id="close-record" class="icon-button" aria-label="Close recording panel">×</button></div><p class="muted drawer-intro">Invite your assistant. Stay in the conversation.</p>
         <p id="record-notice" role="status" aria-live="polite" hidden></p>
         <form id="join">
