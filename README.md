@@ -8,7 +8,7 @@ Recordings, transcripts, and summaries are stored on your host. External process
 
 [Validation notes](docs/validation.md) · [Third-party notices](THIRD_PARTY_NOTICES.md)
 
-![Manual meeting recording through Record a meeting, with a demonstration meeting name, Zoom link, bot name, and capture mode](docs/images/interface.png)
+![Manual meeting recording through Record a meeting, with a demonstration meeting name, Zoom link, bot name, and capture mode](docs/images/manual-recording.png)
 
 ## Features
 
