@@ -22,8 +22,49 @@ test('automatic sign-in persists a verified fresh session and closes the login b
 });
 test('challenge or rejected credentials requires Settings without exposing a browser error',async()=>{
   const f=fixture();f.driver.verify=async()=>false;
+  f.driver.requiresAction=async()=>true;
   await assert.rejects(recoverZoomSession(f.settings,f.signal.signal,async()=>f.driver),/Settings/);
   assert.equal(f.settings.metadata().status,'sign_in_required');assert.equal(f.closed(),1);assert.equal(f.submissions(),1);
+});
+test('automatic sign-in waits for authentication to finish without submitting credentials again',async()=>{
+  const f=fixture();let checks=0;
+  f.driver.verify=async()=>++checks>=3;
+  f.driver.requiresAction=async()=>false;
+  assert.deepEqual(await recoverZoomSession(f.settings,f.signal.signal,async()=>f.driver,undefined,{pollMs:1,timeoutMs:1000}),fresh);
+  assert.deepEqual(f.settings.session(),fresh);
+  assert.equal(f.submissions(),1);assert.equal(f.closed(),1);
+});
+test('automatic sign-in stops waiting at its deadline and cannot save a late verification',async()=>{
+  const f=fixture();let release!:(valid:boolean)=>void;
+  f.driver.verify=()=>new Promise(resolve=>release=resolve);
+  await assert.rejects(recoverZoomSession(f.settings,f.signal.signal,async()=>f.driver,undefined,{pollMs:1,timeoutMs:20}),/Settings/);
+  assert.equal(f.closed(),1);assert.equal(f.settings.metadata().status,'sign_in_required');
+  release(true);await new Promise(r=>setImmediate(r));
+  assert.equal(f.settings.metadata().status,'sign_in_required');
+});
+test('stop during the polling interval closes the browser without expiring the account',async()=>{
+  const f=fixture();
+  f.driver.verify=async()=>false;
+  f.driver.requiresAction=async()=>false;
+  const task=recoverZoomSession(f.settings,f.signal.signal,async()=>f.driver,undefined,{pollMs:1000,timeoutMs:2000});
+  setTimeout(()=>f.signal.abort(),20);
+  await assert.rejects(task,{name:'AbortError'});
+  assert.equal(f.closed(),1);assert.deepEqual(f.settings.session(),state);
+});
+test('rejected credentials stop recovery immediately',async()=>{
+  const f=fixture();f.driver.verify=async()=>false;
+  f.driver.problem=async()=> 'Zoom did not accept the credentials.';
+  await assert.rejects(recoverZoomSession(f.settings,f.signal.signal,async()=>f.driver,undefined,{pollMs:1,timeoutMs:1000}),/Settings/);
+  assert.equal(f.closed(),1);assert.equal(f.submissions(),1);
+});
+test('recovery diagnostics report a safe stage without raw browser error contents',async(t)=>{
+  const f=fixture();const lines:unknown[][]=[];
+  t.mock.method(console,'warn',(...args:unknown[])=>{lines.push(args);});
+  f.driver.start=async()=>{throw Error('private-password cookie=secret bot@example.com');};
+  await assert.rejects(recoverZoomSession(f.settings,f.signal.signal,async()=>f.driver),/Settings/);
+  const log=JSON.stringify(lines);
+  assert.match(log,/submitting/);assert.match(log,/browser_error/);
+  assert.doesNotMatch(log,/private-password|cookie=secret|bot@example.com/);
 });
 test('legacy session without a saved password does not open a login browser',async()=>{
   const f=fixture();f.settings.disconnect();f.settings.save('bot@example.com',state);

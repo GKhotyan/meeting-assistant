@@ -2,7 +2,15 @@
   const el=id=>document.getElementById(id), base='/api/settings/zoom';
   const dialog=el('zoom-browser'), image=el('zoom-browser-image');
   let state, pending=false, polling=false, imageUrl, frameBusy=false, stopped=false, emailDirty=false;
-  el('zoom-email').addEventListener('input',()=>{emailDirty=true;});
+  function passwordHint() {
+    const saved=state?.passwordSaved && state.email?.toLowerCase()===el('zoom-email').value.trim().toLowerCase();
+    el('zoom-password').placeholder=saved?'••••••••':'';
+    el('zoom-password').required=!saved;
+    el('zoom-password-help').textContent=saved
+      ? 'Password saved. Leave this field unchanged to reconnect, or enter a new password.'
+      : 'Enter the Zoom password for this account.';
+  }
+  el('zoom-email').addEventListener('input',()=>{emailDirty=true;passwordHint();});
   let inputQueue=Promise.resolve();
   async function request(path='',method='GET',data) {
     const r=await fetch(base+path,{method,headers:method==='GET'?{}:{'Content-Type':'application/json'},...(data!==undefined?{body:JSON.stringify(data)}:{})});
@@ -13,8 +21,20 @@
   function render(value) {
     state=value;
     if(!emailDirty)el('zoom-email').value=value.email || '';
+    passwordHint();
     el('zoom-status').textContent=(names[value.status] || 'Unavailable')+(value.email?' · '+value.email:'');
-    el('zoom-feedback').textContent=value.message || (value.status==='connected'?'Session verified. Meeting admission remains controlled by Zoom.':'');
+    const feedback=el('zoom-feedback');
+    const message=value.message || (value.status==='connected'?'Session verified. Meeting admission remains controlled by Zoom.':'');
+    const animate=value.status==='connecting' && message.endsWith('…');
+    // Preserve the nodes across status polls so the animation keeps progressing.
+    if(feedback.textContent!==message || !!feedback.querySelector('.zoom-progress-dots')!==animate) {
+      feedback.textContent=animate ? message.slice(0,-1) : message;
+      if(animate) {
+        const dots=document.createElement('span');
+        dots.className='zoom-progress-dots';dots.textContent='…';
+        feedback.append(dots);
+      }
+    }
     const active=['connecting','action_required'].includes(value.status);
     el('zoom-connect').disabled=pending || active;
     el('zoom-connect').textContent=['connected','sign_in_required'].includes(value.status)?'Reconnect':'Connect';

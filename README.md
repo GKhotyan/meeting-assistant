@@ -69,6 +69,10 @@ Depending on the selected mode, it also contains video or screenshots with `.jpg
 
 ## Recurring meetings
 
+Choose when the bot joins each recurring meeting, with separate weekdays, times, time zones, and recording modes. The screenshot below uses fictional demonstration meetings.
+
+![Recurring meeting schedules with fictional standup and design review meetings](docs/images/schedule.png)
+
 Open **Schedule → Add meeting**, enter a meeting name, bot name (default **Engineering Assistant**), and Zoom link, select one or more weekdays, and choose the local time, IANA time zone (default `Europe/Moscow`), and recording mode. Rules can be edited, paused, resumed, or deleted. Deleting a rule keeps its existing recordings.
 
 Each rule saves its own bot name, which can be changed when editing the meeting and is used for automatic launches independently of Settings. Existing rules without a bot name use **Engineering Assistant**.
@@ -104,6 +108,9 @@ cannot authorize the container. Closing this view leaves sign-in pending;
 
 **Check connection** verifies the saved session without entering a meeting.
 **Reconnect** starts a new sign-in; **Disconnect** removes the saved account.
+When a password is saved, its field shows a mask: leave it unchanged to reconnect
+with the server-stored password, or enter a new password. Changing the email requires
+a password for that account. The saved password itself is never sent to the browser.
 An expired session triggers one automatic sign-in with the saved password before
 another meeting connection attempt. If Zoom requests a verification code or CAPTCHA,
 or rejects the credentials, reconnect in Settings. Accounts connected before password
@@ -126,6 +133,10 @@ The global Zoom account name is never changed. Explicit bot prohibitions stop
 connection retries; they are not reported as a proven requirement to use RTMS.
 
 ## Deepgram settings
+
+Configure Deepgram for transcription and OpenAI or z.ai models for meeting summaries. This settings screenshot uses demonstration model preferences and contains no API keys.
+
+![Integration settings for Deepgram transcription and OpenAI and z.ai summary models](docs/images/integrations.png)
 
 Open **Settings → Deepgram** to enter, show/hide, save, check or remove an API key. **Check connection** checks the entered key without saving it; an empty field uses the saved key. Saving does not verify connectivity. The server checks [Deepgram authentication](https://developers.deepgram.com/guides/fundamentals/authenticating) with a 10-second timeout, without uploading recordings. This confirms authentication only, not transcription permissions or available balance.
 

@@ -1023,6 +1023,13 @@ footer {
 /* Account guidance remains available on hover, keyboard focus and touch. */
 .zoom-field-heading { display: flex; align-items: center; gap: .5rem; margin-bottom: .4rem; }
 .zoom-field-heading h2 { margin: 0; }
+.zoom-progress-dots { display: inline-block; animation: zoom-progress-dots 1.2s steps(1, end) infinite; }
+@keyframes zoom-progress-dots {
+  0%, 100% { clip-path: inset(0 66.67% 0 0); }
+  33.33% { clip-path: inset(0 33.33% 0 0); }
+  66.67% { clip-path: inset(0); }
+}
+@media (prefers-reduced-motion: reduce) { .zoom-progress-dots { animation: none; } }
 .field-help { position: relative; display: inline-flex; }
 .field-help-button { display: inline-flex; align-items: center; justify-content: center; width: 1.25rem; height: 1.25rem; min-height: 0; padding: 0; border: 1px solid #94a3b8; border-radius: 50%; background: transparent; color: #475569; font-size: .8rem; line-height: 1; cursor: help; box-shadow: none; }
 .field-help-button:hover, .field-help-button:focus-visible { background: #e8edff; color: #2448bd; }

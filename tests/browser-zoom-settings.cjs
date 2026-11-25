@@ -32,6 +32,17 @@ const {chromium}=require(process.env.PLAYWRIGHT_MODULE || 'playwright');
   assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
   await page.locator('#zoom-browser-close').click();await page.locator('#zoom-cancel').click();
   await page.locator('#zoom-status').filter({hasText:'Not connected'}).waitFor();
+  status={status:'connected',email:'bot@example.com',passwordSaved:true,browserAvailable:false};
+  await page.getByRole('button',{name:'Reconnect',exact:true}).waitFor();
+  const password=page.getByLabel('Zoom password',{exact:true});
+  assert.equal(await password.inputValue(),'');assert.equal(await password.getAttribute('placeholder'),'••••••••');
+  assert.equal(await password.evaluate(e=>e.required),false);
+  await page.getByLabel('Zoom email',{exact:true}).fill('other@example.com');
+  assert.equal(await password.evaluate(e=>e.required),true);assert.equal(await password.getAttribute('placeholder'),'');
+  await page.getByLabel('Zoom email',{exact:true}).fill('bot@example.com');
+  await page.locator('#zoom-connect').click();await page.getByRole('button',{name:'Continue in browser',exact:true}).waitFor();
+  assert.equal(posted.password,'','masked placeholder must never be submitted as a password');
+  await page.locator('#zoom-cancel').click();
   assert.deepEqual(errors,[]);console.log('Zoom Settings browser smoke passed');
  }finally{await browser.close();}
 })().catch(e=>{console.error(e);process.exit(1);});

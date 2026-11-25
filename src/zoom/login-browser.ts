@@ -42,6 +42,14 @@ export async function createLoginBrowser(state?:ZoomState):Promise<LoginDriver> 
         if(/incorrect|invalid password|wrong password|account.*locked/i.test(text)) return 'Zoom did not accept the credentials. Cancel to correct them, or continue in the browser.';
         return '';
       },
+      async requiresAction() {
+        return page().evaluate(()=>{
+          const text=document.body?.innerText || '';
+          const visible=(selector:string)=>[...document.querySelectorAll(selector)].some(e=>(e as HTMLElement).offsetWidth>0 && (e as HTMLElement).offsetHeight>0);
+          return /verify your identity|enter[^\n]*verification code|complete[^\n]*captcha/i.test(text) ||
+            visible('input[autocomplete="one-time-code"], iframe[title*="challenge" i][src*="recaptcha"], iframe[title*="challenge" i][src*="hcaptcha"]');
+        });
+      },
       async state(){const s=await context.storageState();return {cookies:s.cookies.filter(c=>zoomHost(c.domain.replace(/^\./,''))),origins:s.origins.filter(o=>zoomHost(new URL(o.origin).hostname))};},
       frame:()=>page().screenshot({type:'jpeg',quality:70,timeout:5000}),
       async input(a:BrowserInput) {

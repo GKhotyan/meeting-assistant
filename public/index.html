@@ -134,7 +134,8 @@
       <p class="muted">Connect an account for future meetings, or leave disconnected to join as a guest. Each meeting keeps its own bot name when Zoom permits it.</p>
       <p id="zoom-status" role="status" aria-live="polite">Loading Zoom account…</p>
       <label for="zoom-email">Zoom email</label><input id="zoom-email" type="email" maxlength="254" autocomplete="username" required />
-      <label for="zoom-password">Zoom password</label><input id="zoom-password" type="password" maxlength="1024" autocomplete="current-password" required />
+      <label for="zoom-password">Zoom password</label><input id="zoom-password" type="password" maxlength="1024" autocomplete="current-password" aria-describedby="zoom-password-help" required />
+      <p id="zoom-password-help" class="muted">Enter the Zoom password for this account.</p>
       <p class="muted">Your password and verified session are encrypted on this server. If the session expires, the app tries to sign in automatically once before reconnecting to the meeting. Zoom verification codes or CAPTCHA require sign-in here. Disconnect removes the saved credentials.</p>
       <div class="actions"><button id="zoom-connect" type="submit" disabled>Connect</button><button id="zoom-check" class="secondary" type="button" hidden>Check connection</button><button id="zoom-disconnect" class="secondary" type="button" hidden>Disconnect</button><button id="zoom-cancel" class="secondary" type="button" hidden>Cancel sign-in</button><button id="zoom-browser-open" class="secondary" type="button" hidden>Continue in browser</button><button id="zoom-reload" class="secondary" type="button" hidden>Retry loading</button></div>
       <p id="zoom-feedback" role="status" aria-live="polite"></p>

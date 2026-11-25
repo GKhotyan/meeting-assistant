@@ -6,6 +6,7 @@ export interface LoginDriver {
   start(email:string,password:string):Promise<void>;
   verify():Promise<boolean>;
   problem():Promise<string>;
+  requiresAction?():Promise<boolean>;
   state():Promise<ZoomState>;
   frame():Promise<Buffer>;
   input(action:BrowserInput):Promise<void | {credentialsChanged:boolean}>;
@@ -22,11 +23,14 @@ export class ZoomConnection {
   private busy=false;
   private checking=false;
   private operations:Promise<unknown>=Promise.resolve();
-  private submittedCredentials?:{password?:string};
-  constructor(root:string,private factory:(state?:ZoomState)=>Promise<LoginDriver>=createLoginBrowser,private timing={pollMs:3000,timeoutMs:900000} as {pollMs?:number;timeoutMs?:number}) {
+  private submittedCredentials?:{password?:string;submittedAt:number;actionRequired?:boolean};
+  constructor(root:string,private factory:(state?:ZoomState)=>Promise<LoginDriver>=createLoginBrowser,private timing={pollMs:3000,timeoutMs:900000} as {pollMs?:number;timeoutMs?:number;actionWaitMs?:number}) {
     this.settings=new ZoomSettings(root);
   }
-  metadata() { return {...(this.transient || this.settings.metadata()), browserAvailable:!!this.active && !this.checking}; }
+  metadata() {
+    const value=this.transient || this.settings.metadata(),saved=this.settings.recoveryAccount();
+    return {...value,passwordSaved:!!saved && saved.email.toLowerCase()===value.email.toLowerCase(),browserAvailable:!!this.active && !this.checking};
+  }
   private clearTimers() { clearTimeout(this.timer); clearTimeout(this.deadline); }
   async cancel() {
     this.generation++; this.clearTimers(); this.transient=undefined; this.checking=false; this.submittedCredentials=undefined;
@@ -36,13 +40,16 @@ export class ZoomConnection {
   async close() { await this.cancel(); }
   connect(input:{email?:unknown;password?:unknown}) {
     if (typeof input.email!=='string' || input.email.length>254 || !/^\S+@\S+\.\S+$/.test(input.email.trim()) ||
-      typeof input.password!=='string' || !input.password || input.password.length>1024)
+      (input.password!==undefined && (typeof input.password!=='string' || input.password.length>1024)))
       throw new AppError(400,'Enter your Zoom email and password.');
     if (this.active || this.transient?.status==='connecting') throw new AppError(409,'Finish or cancel the current Zoom connection first.');
-    const email=input.email.trim(), generation=++this.generation;
+    const email=input.email.trim(),saved=this.settings.recoveryAccount();
+    const password=input.password || (saved?.email.toLowerCase()===email.toLowerCase() ? saved.password : undefined);
+    if(typeof password!=='string' || !password)throw new AppError(400,'Enter your Zoom email and password.');
+    const generation=++this.generation;
     this.transient={status:'connecting',message:'Signing in to Zoom…',email};
     // Persist credentials only after Zoom confirms a successful sign-in.
-    void this.openLogin(generation,email,input.password);
+    void this.openLogin(generation,email,password);
     return this.metadata();
   }
   private async openLogin(g:number,email:string,password:string) {
@@ -51,10 +58,11 @@ export class ZoomConnection {
       browser=await this.factory();
       if (g!==this.generation) { await browser.close(); return; }
       this.active=browser;
-      const credentials=this.submittedCredentials={password} as {password?:string};
+      const credentials=this.submittedCredentials={password,submittedAt:Date.now()} as {password?:string;submittedAt:number;actionRequired?:boolean};
       this.deadline=setTimeout(()=>void this.fail(g,'Sign-in timed out. Connect again.'),this.timing.timeoutMs ?? 900000); this.deadline.unref();
       try { await browser.start(email,password); }
-      catch { credentials.password=undefined; if(g===this.generation) this.transient={status:'action_required',message:'Complete sign-in in the browser, or cancel and correct your credentials.',email}; }
+      catch { credentials.password=undefined; credentials.actionRequired=true; if(g===this.generation) this.transient={status:'action_required',message:'Complete sign-in in the browser, or cancel and correct your credentials.',email}; }
+      credentials.submittedAt=Date.now();
       if(g===this.generation) await this.observe(g,email,credentials);
       password='';
     } catch { password=''; await this.fail(g,'Could not open the Zoom sign-in browser. Try again.'); }
@@ -66,7 +74,7 @@ export class ZoomConnection {
     await this.cancel();
     if(this.generation===cancelledGeneration)this.transient={status:'error',message,email};
   }
-  private async observe(g:number,email:string,credentials:{password?:string}) {
+  private async observe(g:number,email:string,credentials:{password?:string;submittedAt:number;actionRequired?:boolean}) {
     const browser=this.active; if(g!==this.generation || !browser)return;
     try {
       if(await browser.verify()) {
@@ -76,7 +84,12 @@ export class ZoomConnection {
       }
       const problem=await browser.problem(); if(g!==this.generation)return;
       if(problem)credentials.password=undefined;
-      this.transient={status:'action_required',email,message:problem || 'Complete sign-in in the browser. Zoom may request a verification code or CAPTCHA.'};
+      const challenge=await browser.requiresAction?.() ?? true;
+      if(g!==this.generation)return;
+      const needsAction=!!problem || credentials.actionRequired || challenge || Date.now()-credentials.submittedAt >= (this.timing.actionWaitMs ?? 20000);
+      this.transient=needsAction
+        ? {status:'action_required',email,message:problem || 'Complete sign-in in the browser. Zoom may request a verification code or CAPTCHA.'}
+        : {status:'connecting',email,message:'Verifying your Zoom session…'};
       this.timer=setTimeout(()=>void this.observe(g,email,credentials),this.timing.pollMs ?? 3000); this.timer.unref();
     } catch { await this.fail(g,'The Zoom sign-in browser closed or became unavailable. Connect again.'); }
   }

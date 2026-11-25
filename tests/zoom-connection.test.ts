@@ -10,12 +10,48 @@ const root = () => mkdtempSync(join(tmpdir(),'zoom-connect-'));
 const tick = () => new Promise(r=>setTimeout(r,15));
 function driver(auth = false) {
   const value = { auth, closed:false, submitted:false, failure:'',
+    async requiresAction() { return true; },
     async start(email:string,password:string) { value.submitted = email === 'bot@example.com' && password === 'secret'; },
     async verify() { return value.auth; }, async problem() { return value.failure; },
     async state() { return state; }, async frame() { return Buffer.from('frame'); },
     async input() {}, async close() { value.closed=true; } };
   return value satisfies LoginDriver;
 }
+test('Reconnect reuses the encrypted saved password for the same account, including expired sessions',async()=>{
+  const dir=root(),settings=new ZoomSettings(dir);settings.save('bot@example.com',state,'secret');settings.markExpired();
+  const d=driver(true),service=new ZoomConnection(dir,async()=>d);
+  assert.equal(service.metadata().passwordSaved,true);
+  service.connect({email:'bot@example.com',password:''});await tick();
+  assert.equal(d.submitted,true);assert.equal(service.metadata().status,'connected');
+  assert.equal(JSON.stringify(service.metadata()).includes('secret'),false);await service.close();
+});
+test('saved passwords cannot be reused for another email or after disconnect',async()=>{
+  const dir=root(),settings=new ZoomSettings(dir);settings.save('bot@example.com',state,'secret');
+  const service=new ZoomConnection(dir,async()=>driver(true));
+  assert.throws(()=>service.connect({email:'other@example.com',password:''}),/password/);
+  await service.disconnect();assert.equal(service.metadata().passwordSaved,false);
+  assert.throws(()=>service.connect({email:'bot@example.com',password:''}),/password/);await service.close();
+});
+test('an explicitly entered password replaces the saved password only after verified login',async()=>{
+  const dir=root(),settings=new ZoomSettings(dir);settings.save('bot@example.com',state,'old-password');
+  const d=driver(true),service=new ZoomConnection(dir,async()=>d);
+  service.connect({email:'bot@example.com',password:'secret'});await tick();
+  assert.equal(d.submitted,true);assert.equal(settings.recoveryAccount()?.password,'secret');await service.close();
+});
+test('normal sign-in stays connecting until verified without asking for manual assistance',async()=>{
+  const d=driver(),service=new ZoomConnection(root(),async()=>d,{pollMs:5});
+  d.requiresAction=async()=>false;
+  service.connect({email:'bot@example.com',password:'secret'});await tick();
+  assert.equal(service.metadata().status,'connecting');
+  assert.equal(service.metadata().message,'Verifying your Zoom session…');
+  d.auth=true;await tick();assert.equal(service.metadata().status,'connected');await service.close();
+});
+test('unrecognized sign-in page eventually offers manual assistance instead of waiting indefinitely',async()=>{
+  const d=driver(),service=new ZoomConnection(root(),async()=>d,{pollMs:5,actionWaitMs:0});
+  d.requiresAction=async()=>false;
+  service.connect({email:'bot@example.com',password:'secret'});await tick();
+  assert.equal(service.metadata().status,'action_required');await service.close();
+});
 test('login challenges remain interactive; verified login alone persists the session', async () => {
   const dir=root(), d=driver(), service=new ZoomConnection(dir,async()=>d,{pollMs:5});
   service.connect({email:'bot@example.com',password:'secret'}); await tick();

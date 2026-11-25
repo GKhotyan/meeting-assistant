@@ -42,15 +42,16 @@ async function run(scenario: string, action: (message: any, child: ReturnType<ty
     }
     child.send({ type: "start", input: { meetingUrl: "https://zoom.us/j/12345678901", botName: "Bot", recordingMode: "audio" }, sessionDir: "/tmp", ...zoomInput });
     await exit;
-    assert.equal(stderr, "");
+    if(scenario==='auth-challenge')assert.equal(stderr, 'Zoom automatic sign-in failed: stage=verifying reason=action_required\n');
+    else assert.equal(stderr, "");
     assert.ok(messages.some(m => m.type === "done"), "worker must confirm completion instead of timing out");
     return messages;
   } finally { clearTimeout(watchdog); if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL"); }
 }
-for(const scenario of ['auth-recover','auth-expired','auth-rejected','auth-challenge']) test(`real worker handles ${scenario} with one credential submission`,async()=>{
+for(const scenario of ['auth-recover','auth-expired','auth-rejected','auth-challenge','auth-delayed']) test(`real worker handles ${scenario} with one credential submission`,async()=>{
   const messages=await run(scenario,(m,child)=>{if(m.status==='recording')child.send({type:'stop'});});
   assert.equal(messages.filter(m=>m.event==='sign-in').length,1);
-  const recovered=['auth-recover','auth-expired'].includes(scenario);
+  const recovered=['auth-recover','auth-expired','auth-delayed'].includes(scenario);
   assert.equal(messages.some(m=>m.status==='recording'),recovered);
   assert.equal(messages.filter(m=>m.event==='launching').length,scenario==='auth-expired'?1:scenario==='auth-challenge'?1:2);
   if(!recovered)assert.match(messages.at(-1).error,/sign-in required|auth_required/);
