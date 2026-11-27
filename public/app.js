@@ -1,6 +1,8 @@
 const $ = (id) => document.getElementById(id);
 let activeId = null;
 let latestSessions = [];
+const meetingsPerPage = 10;
+let meetingsPage = 1;
 let activeSession = null;
 let busy = false;
 const deleting = new Set();
@@ -71,15 +73,22 @@ function render(sessions) {
   }
   $("meeting-count").textContent = sessions.length;
   const query = $("meeting-search").value.trim().toLocaleLowerCase("en-US");
-  const visibleSessions = sessions.filter(s => [s.meetingName || "Meeting", s.botName, s.id].join(" ").toLocaleLowerCase("en-US").includes(query));
-  $("result-count").textContent = visibleSessions.length;
+  const matchingSessions = sessions.filter(s => [s.meetingName || "Meeting", s.botName, s.id].join(" ").toLocaleLowerCase("en-US").includes(query));
+  $("result-count").textContent = matchingSessions.length;
+  const pageCount = Math.max(1, Math.ceil(matchingSessions.length / meetingsPerPage));
+  meetingsPage = Math.min(meetingsPage, pageCount);
+  const visibleSessions = matchingSessions.slice((meetingsPage - 1) * meetingsPerPage, meetingsPage * meetingsPerPage);
+  $("meetings-pagination").hidden = pageCount <= 1;
+  $("meetings-page").textContent = "Page " + meetingsPage + " of " + pageCount;
+  $("meetings-previous").disabled = meetingsPage === 1;
+  $("meetings-next").disabled = meetingsPage === pageCount;
   activeId =
     sessions.find(
       (s) => !["completed", "failed", "interrupted"].includes(s.status),
     )?.id || null;
   $("start").disabled = busy || !!activeId;
   $("stop").disabled = busy || !activeId;
-  const renderKey = JSON.stringify([sessions, [...deleting], query]);
+  const renderKey = JSON.stringify([sessions, [...deleting], query, meetingsPage]);
   if (renderKey === renderedSessionsKey) return;
   const scrollPosition = { x: window.scrollX, y: window.scrollY };
   const screenshotState = new Map(
@@ -616,7 +625,18 @@ api("/api/settings")
 refresh();
 setInterval(refresh, 2000);
 
-$("meeting-search").addEventListener("input", () => render(latestSessions));
+$("meeting-search").addEventListener("input", () => {
+  meetingsPage = 1;
+  render(latestSessions);
+});
+$("meetings-previous").addEventListener("click", () => {
+  meetingsPage = Math.max(1, meetingsPage - 1);
+  render(latestSessions);
+});
+$("meetings-next").addEventListener("click", () => {
+  meetingsPage += 1;
+  render(latestSessions);
+});
 $("record-meeting").addEventListener("click", () => {
   $("record-notice").textContent = "";
   $("record-notice").hidden = true;

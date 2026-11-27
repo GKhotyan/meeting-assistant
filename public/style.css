@@ -284,6 +284,19 @@ p {
   font-size:12px;
   padding:10px 12px;
 }
+.meetings-pagination {
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:16px;
+  padding-top:20px;
+}
+.meetings-pagination button {
+  margin:0;
+}
+.meetings-pagination span {
+  font-size:12px;
+}
 .list-heading {
   display:flex;
   justify-content:space-between;
